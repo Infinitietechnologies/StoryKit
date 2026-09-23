@@ -6,6 +6,7 @@ export const LocationSticker: React.FC<{ data: LocationStickerData }> = ({ data 
 
   return (
     <button
+      type="button"
       onClick={onTap}
       data-interactive="true"
       style={{
@@ -47,4 +48,3 @@ export const LocationSticker: React.FC<{ data: LocationStickerData }> = ({ data 
     </button>
   );
 };
-

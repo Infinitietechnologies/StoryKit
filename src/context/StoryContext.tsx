@@ -22,6 +22,7 @@ export const StoryProvider: React.FC<{
 }> = ({ stories, config = {}, children }) => {
   const {
     defaultDuration = 5000,
+    defaultMuted = true,
     preloadCount = 2,
     initialStoryIndex = 0,
   } = config;
@@ -33,7 +34,7 @@ export const StoryProvider: React.FC<{
   const [isPaused, setIsPaused] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted, setIsMuted] = useState(defaultMuted);
   const [error, setError] = useState<string | null>(null);
 
   // Keep config in a ref to avoid re-triggering effects when parent passes inline callbacks
@@ -45,14 +46,13 @@ export const StoryProvider: React.FC<{
   const lastReportedStoryIdRef = useRef<string | null>(null);
 
   // Sync activeIndex if initialStoryIndex changes or if stories list switches to a new user
-  const initialIndexRef = useRef(initialStoryIndex);
-  const prevStoriesRef = useRef(stories);
+  const storiesIdentity = stories.map((story) => story.id).join('\u0000');
+  const prevStoriesIdentityRef = useRef(storiesIdentity);
 
   useEffect(() => {
-    if (prevStoriesRef.current !== stories) {
-      prevStoriesRef.current = stories;
+    if (prevStoriesIdentityRef.current !== storiesIdentity) {
+      prevStoriesIdentityRef.current = storiesIdentity;
       const clamped = Math.min(Math.max(0, initialStoryIndex), Math.max(0, stories.length - 1));
-      initialIndexRef.current = clamped;
       setActiveIndex(clamped);
       setIsLoaded(false);
       setIsBuffering(false);
@@ -63,7 +63,7 @@ export const StoryProvider: React.FC<{
         if (el) el.style.transform = i < clamped ? 'scaleX(1)' : 'scaleX(0)';
       });
     }
-  }, [stories, initialStoryIndex]);
+  }, [stories, storiesIdentity, initialStoryIndex]);
 
   // Notify parent on story change (strictly once per story transition)
   useEffect(() => {
@@ -96,6 +96,7 @@ export const StoryProvider: React.FC<{
 
   // ── rAF handle ────────────────────────────────────────────────────────────
   const rafRef = useRef<number>(0);
+  const allStoriesEndedRef = useRef(false);
 
   // ── Is current story a video? Set synchronously at render time ───────────
   const isVideo = stories[activeIndex]?.type === 'video';
@@ -130,23 +131,40 @@ export const StoryProvider: React.FC<{
   );
 
   const next = useCallback(() => {
+    if (activeIndexRef.current < stories.length - 1) {
+      setIsLoaded(false);
+      setIsBuffering(false);
+      setError(null);
+    }
     setActiveIndex((prev) => {
+      const isLast = prev >= stories.length - 1;
+      if (isLast && allStoriesEndedRef.current) return prev;
       if (stories[prev]) {
         configRef.current.onStoryEnd?.(prev, stories[prev]);
       }
       const n = prev + 1;
-      if (n < stories.length) return n;
+      if (n < stories.length) {
+        allStoriesEndedRef.current = false;
+        return n;
+      }
+      allStoriesEndedRef.current = true;
       configRef.current.onAllStoriesEnd?.();
       return prev;
     });
   }, [stories]);
 
   const prev = useCallback(() => {
+    if (activeIndexRef.current > 0) {
+      setIsLoaded(false);
+      setIsBuffering(false);
+      setError(null);
+    }
     setActiveIndex((prevIdx) => {
       if (prevIdx === 0) {
         configRef.current.onStartReached?.();
         return 0;
       }
+      allStoriesEndedRef.current = false;
       return prevIdx - 1;
     });
   }, []);
@@ -160,6 +178,10 @@ export const StoryProvider: React.FC<{
       const idx = Math.min(Math.max(0, targetIndex), Math.max(0, stories.length - 1));
       setActiveIndex(idx);
       setIsPaused(false);
+      setIsLoaded(false);
+      setIsBuffering(false);
+      setError(null);
+      allStoriesEndedRef.current = false;
       segmentRefs.current.forEach((el, i) => {
         if (el) el.style.transform = i < idx ? 'scaleX(1)' : 'scaleX(0)';
       });
@@ -169,6 +191,7 @@ export const StoryProvider: React.FC<{
 
   // ── Preloading engine ─────────────────────────────────────────────────────
   useEffect(() => {
+    const appendedLinks: HTMLLinkElement[] = [];
     for (let i = 1; i <= preloadCount; i++) {
       const story = stories[activeIndex + i];
       if (!story) break;
@@ -176,24 +199,24 @@ export const StoryProvider: React.FC<{
         const img = new Image();
         img.src = story.url;
       } else {
-        const selector = `link[rel="preload"][as="video"][href="${story.url}"]`;
-        if (!document.head.querySelector(selector)) {
+        const alreadyPreloaded = Array.from(
+          document.head.querySelectorAll<HTMLLinkElement>('link[rel="preload"][as="video"]'),
+        ).some((link) => link.getAttribute('href') === story.url);
+        if (!alreadyPreloaded) {
           const link = document.createElement('link');
           link.rel = 'preload';
           link.as = 'video';
           link.href = story.url;
           document.head.appendChild(link);
+          appendedLinks.push(link);
         }
       }
     }
+    return () => appendedLinks.forEach((link) => link.remove());
   }, [activeIndex, stories, preloadCount]);
 
   // ── Reset on story change ─────────────────────────────────────────────────
   useEffect(() => {
-    setIsLoaded(false);
-    setIsBuffering(false);
-    setError(null);
-
     // Snap past stories to full, current + future to empty
     segmentRefs.current.forEach((el, i) => {
       if (!el) return;
@@ -226,14 +249,7 @@ export const StoryProvider: React.FC<{
 
         if (fraction >= 1) {
           writeProgress(activeIndex, 1);
-          if (stories[activeIndex]) {
-            configRef.current.onStoryEnd?.(activeIndex, stories[activeIndex]);
-          }
-          if (activeIndex >= stories.length - 1) {
-            configRef.current.onAllStoriesEnd?.();
-          } else {
-            setActiveIndex(activeIndex + 1);
-          }
+          next();
           return; // stop loop — new activeIndex triggers a fresh effect
         }
       } else {
@@ -247,8 +263,7 @@ export const StoryProvider: React.FC<{
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
     // We intentionally exclude isPaused/isLoaded/isBuffering — they are read via refs.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeIndex, isVideo, stories, defaultDuration, writeProgress]);
+  }, [activeIndex, isVideo, stories, defaultDuration, writeProgress, next]);
 
   const value: StoryContextType = {
     activeIndex,

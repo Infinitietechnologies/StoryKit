@@ -1,78 +1,125 @@
-# react-stories-status-viewer
+# react-storykit
 
-A micro-architectural, highly resilient, and accessible React & TypeScript Story Viewer Package.
+Production-focused React components for image and video stories, segmented story
+rings, progress indicators, gestures, and interactive stickers.
 
-## Features
-- **Hyper-accurate Timers**: Uses `requestAnimationFrame` + `performance.now()`.
-- **Preloading Engine**: Silently preloads next media items for zero-latency transitions.
-- **Smart Gestures**: Differentiates taps and swipes with precise geometry and timing checks.
-- **Dynamic Overlays**: Auto-adjusting overlay bounding boxes to keep interactive elements in the viewport.
-- **Resilient Media**: Graceful fallbacks, syncs video natively with context state.
-- **Tailwind Native**: Styled entirely with Tailwind CSS utility classes.
+## Requirements
+
+- React 18 or 19
+- React DOM 18 or 19
+- Node.js 20.19 or newer for development and package builds
+- A modern browser with Pointer Events support
 
 ## Installation
 
 ```bash
-npm install react-stories-status-viewer
+npm install react-storykit
 ```
 
-### Tailwind CSS Setup
-
-Since this package uses Tailwind CSS internally, you must add the package to your `tailwind.config.js` `content` array so Tailwind can compile the classes used inside the viewer:
-
-```javascript
-module.exports = {
-  content: [
-    // ... your other paths
-    "./node_modules/react-stories-status-viewer/dist/**/*.{js,mjs}"
-  ],
-  theme: {
-    extend: {},
-  },
-  plugins: [],
-}
-```
-
-## Usage
+Import the packaged stylesheet once in your application entry point:
 
 ```tsx
-import { 
-  StoryProvider, 
-  StoryContainer, 
-  StoryProgress, 
-  StoryContent, 
-  DynamicOverlay 
-} from 'react-stories-status-viewer';
+import 'react-storykit/styles.css';
+```
 
-const stories = [
+The CSS is precompiled; consumers do not need Tailwind CSS.
+
+## Complete viewer
+
+```tsx
+import { StoryViewer, type StoryItem } from 'react-storykit';
+import 'react-storykit/styles.css';
+
+const stories: StoryItem[] = [
   {
-    id: '1',
-    url: 'https://example.com/image.jpg',
+    id: 'launch',
     type: 'image',
+    url: 'https://cdn.example.com/launch.jpg',
+    altText: 'Product launch',
     duration: 5000,
   },
   {
-    id: '2',
-    url: 'https://example.com/video.mp4',
+    id: 'demo',
     type: 'video',
-  }
+    url: 'https://cdn.example.com/demo.mp4',
+  },
 ];
 
-export default function App() {
+export function Stories({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
-    <div className="w-full h-screen max-w-sm mx-auto">
-      <StoryProvider 
-        stories={stories} 
-        config={{ keyboardNavigation: true }}
-      >
-        <StoryContainer>
-          <StoryProgress />
-          <StoryContent />
-          <DynamicOverlay />
-        </StoryContainer>
-      </StoryProvider>
-    </div>
+    <StoryViewer
+      isOpen={open}
+      onClose={onClose}
+      stories={stories}
+      user={{ id: 'acme', name: 'Acme', avatarUrl: '/avatar.png' }}
+      config={{
+        defaultDuration: 5000,
+        defaultMuted: true,
+        onStoryViewed: (index, story) => console.log('viewed', index, story.id),
+        onAllStoriesEnd: onClose,
+      }}
+    />
   );
 }
 ```
 
+`StoryViewer` provides modal semantics, focus containment and restoration, body
+scroll locking, keyboard controls, reduced-motion support, safe-area spacing,
+and responsive mobile/desktop layouts.
+
+## Composable viewer
+
+The lower-level components can be composed inside `StoryProvider`:
+
+```tsx
+import {
+  DynamicOverlay,
+  StoryContainer,
+  StoryContent,
+  StoryProgress,
+  StoryProvider,
+} from 'react-storykit';
+
+<StoryProvider stories={stories} config={{ keyboardNavigation: true }}>
+  <StoryContainer>
+    <StoryProgress />
+    <StoryContent />
+    <DynamicOverlay />
+  </StoryContainer>
+</StoryProvider>;
+```
+
+## Keyboard controls
+
+| Key | Action |
+| --- | --- |
+| Left/Right arrow | Previous/next story; reversed in RTL mode |
+| Space | Pause or resume |
+| M | Mute or unmute |
+| Escape | Close the viewer |
+
+Set `keyboardNavigation: false` to disable these global controls.
+
+## Security notes
+
+Story media URLs are rendered by the browser and should come from trusted or
+validated sources. Link stickers only open HTTP and HTTPS URLs and isolate the
+new tab with `noopener,noreferrer`. Applications remain responsible for their
+Content Security Policy and media-host allowlists.
+
+## Development
+
+```bash
+npm ci
+npm run validate
+cd demo
+npm ci
+npm run build
+```
+
+`npm run validate` runs TypeScript checks, ESLint, tests, and the production
+package build.
+
+## License
+
+MIT

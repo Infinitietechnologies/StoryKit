@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React from 'react';
 import { useStory } from '../context/StoryContext';
 import { StoryOverlay } from '../types';
 
@@ -52,21 +52,20 @@ const StickerContent: React.FC<{ overlay: StoryOverlay }> = ({ overlay }) => {
  */
 const OverlayNode: React.FC<{
   overlay: StoryOverlay;
-  containerRef: React.RefObject<HTMLDivElement>;
-}> = ({ overlay, containerRef }) => {
-  const nodeRef = useRef<HTMLDivElement>(null);
+}> = ({ overlay }) => {
+  const x = Math.min(100, Math.max(0, overlay.x));
+  const y = Math.min(100, Math.max(0, overlay.y));
 
   return (
     <div
-      ref={nodeRef}
       className="absolute pointer-events-auto"
       data-overlay="true"
       style={{
-        top:  `${overlay.y}%`,
-        left: `${overlay.x}%`,
+        top:  `${y}%`,
+        left: `${x}%`,
         // Nudge inward if sticker would overflow card edge
         // We clamp via CSS so no JS layout thrashing is needed
-        maxWidth: `calc(100% - ${overlay.x}% - 8px)`,
+        maxWidth: `calc(100% - ${x}% - 8px)`,
       }}
     >
       <StickerContent overlay={overlay} />
@@ -76,17 +75,15 @@ const OverlayNode: React.FC<{
 
 // ── Public component ──────────────────────────────────────────────────────────
 export const DynamicOverlay: React.FC = () => {
-  const { stories, activeIndex } = useStory();
+  const { stories, activeIndex, isLoaded } = useStory();
   const story = stories[activeIndex];
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  if (!story?.overlays?.length) return null;
+  if (!isLoaded || !story?.overlays?.length) return null;
 
   return (
     // overflow:hidden clips any sticker that goes outside the card bounds
-    <div ref={containerRef} className="z-40 absolute inset-0 pointer-events-none overflow-hidden">
+    <div className="z-40 absolute inset-0 pointer-events-none overflow-hidden">
       {story.overlays.map((overlay) => (
-        <OverlayNode key={overlay.id} overlay={overlay} containerRef={containerRef} />
+        <OverlayNode key={overlay.id} overlay={overlay} />
       ))}
     </div>
   );

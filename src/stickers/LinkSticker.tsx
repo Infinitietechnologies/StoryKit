@@ -5,11 +5,18 @@ export const LinkSticker: React.FC<{ data: LinkStickerData }> = ({ data }) => {
   const { url, label = 'See More' } = data;
 
   const handleClick = () => {
-    window.open(url, '_blank', 'noopener,noreferrer');
+    try {
+      const parsed = new URL(url, window.location.href);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return;
+      window.open(parsed.href, '_blank', 'noopener,noreferrer');
+    } catch {
+      // Invalid or unsupported URLs are intentionally ignored.
+    }
   };
 
   return (
     <button
+      type="button"
       onClick={handleClick}
       data-interactive="true"
       style={{
@@ -48,4 +55,3 @@ export const LinkSticker: React.FC<{ data: LinkStickerData }> = ({ data }) => {
     </button>
   );
 };
-

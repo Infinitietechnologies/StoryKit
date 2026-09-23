@@ -86,12 +86,14 @@ export const StoryRing: React.FC<StoryRingProps> = ({
 
   return (
     <button
+      type="button"
       onClick={onOpen}
       aria-label={`${viewedCount} of ${totalSegments} stories viewed from ${user.name}`}
       className="flex flex-col items-center gap-1.5 group focus:outline-none"
     >
       {/* Ring container with interactive hover scale and pulse */}
       <div
+        data-storykit-animated="true"
         className={`relative flex items-center justify-center rounded-full transition-transform duration-200 ${
           allSeen ? '' : 'group-hover:scale-105 group-active:scale-95'
         }`}
@@ -114,7 +116,7 @@ export const StoryRing: React.FC<StoryRingProps> = ({
                 ? gradientColors.map((col, idx) => (
                     <stop
                       key={idx}
-                      offset={`${(idx / (gradientColors.length - 1)) * 100}%`}
+                      offset={`${gradientColors.length === 1 ? 0 : (idx / (gradientColors.length - 1)) * 100}%`}
                       stopColor={col}
                     />
                   ))

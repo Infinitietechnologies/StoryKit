@@ -1,0 +1,8 @@
+@tailwind utilities;
+
+@media (prefers-reduced-motion: reduce) {
+  [data-storykit-animated="true"] {
+    animation: none !important;
+    transition: none !important;
+  }
+}

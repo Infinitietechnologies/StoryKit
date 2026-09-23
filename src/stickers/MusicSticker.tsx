@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useInsertionEffect, useRef, useState } from 'react';
 import { MusicStickerData } from '../types';
 
 // Inject keyframes once
@@ -21,7 +21,7 @@ function ensureStyles() {
 }
 
 export const MusicSticker: React.FC<{ data: MusicStickerData }> = ({ data }) => {
-  ensureStyles();
+  useInsertionEffect(ensureStyles, []);
   const { title, artist, albumArtUrl } = data;
 
   // Measure the TEXT SPAN — not the overflow-hidden container — to detect overflow correctly

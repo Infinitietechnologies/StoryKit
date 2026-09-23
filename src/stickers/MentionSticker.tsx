@@ -6,6 +6,7 @@ export const MentionSticker: React.FC<{ data: MentionStickerData }> = ({ data })
 
   return (
     <button
+      type="button"
       onClick={onTap}
       data-interactive="true"
       style={{
@@ -33,4 +34,3 @@ export const MentionSticker: React.FC<{ data: MentionStickerData }> = ({ data })
     </button>
   );
 };
-

@@ -6,6 +6,7 @@ export const HashtagSticker: React.FC<{ data: HashtagStickerData }> = ({ data })
 
   return (
     <button
+      type="button"
       onClick={onTap}
       data-interactive="true"
       style={{
@@ -33,4 +34,3 @@ export const HashtagSticker: React.FC<{ data: HashtagStickerData }> = ({ data })
     </button>
   );
 };
-

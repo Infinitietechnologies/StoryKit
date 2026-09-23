@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StoryItem, StoryUser, ViewerConfig } from '../types';
 import { StoryProvider } from '../context/StoryContext';
 import { StoryContainer } from './StoryContainer';
@@ -8,7 +8,7 @@ import { DynamicOverlay } from './DynamicOverlay';
 import { StoryFooter } from './StoryFooter';
 import { useStory } from '../context/StoryContext';
 
-interface StoryViewerProps {
+export interface StoryViewerProps {
   isOpen: boolean;
   onClose: () => void;
   stories: StoryItem[];
@@ -16,7 +16,21 @@ interface StoryViewerProps {
   /** Index of the story to start playback from (e.g. first unviewed story). Defaults to 0. */
   initialStoryIndex?: number;
   config?: Omit<ViewerConfig, 'onClose'>;
+  /** Accessible name for the modal viewer. */
+  ariaLabel?: string;
 }
+
+const usePrefersReducedMotion = () => {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setReduced(media.matches);
+    update();
+    media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
+  return reduced;
+};
 
 // ── SVG icon helpers ──────────────────────────────────────────────────────────
 const IconClose = () => (
@@ -91,6 +105,7 @@ const StoryHeader: React.FC<{ user?: StoryUser; onClose: () => void }> = ({ user
         onPointerUp={stopPointer}
       >
         <button
+          type="button"
           onClick={toggleMute}
           aria-label={isMuted ? 'Unmute (M)' : 'Mute (M)'}
           title={isMuted ? 'Unmute (M)' : 'Mute (M)'}
@@ -99,6 +114,7 @@ const StoryHeader: React.FC<{ user?: StoryUser; onClose: () => void }> = ({ user
           {isMuted ? <IconMute /> : <IconVolume />}
         </button>
         <button
+          type="button"
           onClick={onClose}
           aria-label="Close (Esc)"
           title="Close (Esc)"
@@ -112,14 +128,26 @@ const StoryHeader: React.FC<{ user?: StoryUser; onClose: () => void }> = ({ user
 };
 
 // ── Inner viewer — inside StoryProvider ──────────────────────────────────────
-const StoryViewerInner: React.FC<{ user?: StoryUser; onClose: () => void; isVisible: boolean }> = ({
+const StoryViewerInner: React.FC<{
+  user?: StoryUser;
+  onClose: () => void;
+  onReady: () => void;
+  isVisible: boolean;
+  reduceMotion: boolean;
+}> = ({
   user,
   onClose,
+  onReady,
   isVisible,
+  reduceMotion,
 }) => {
-  const { stories, activeIndex, config } = useStory();
+  const { stories, activeIndex, config, isLoaded } = useStory();
   const showFooter = config.showFooter !== false;
   const currentStoryId = stories[activeIndex]?.id ?? '';
+
+  useEffect(() => {
+    if (isLoaded || !stories.length) onReady();
+  }, [isLoaded, onReady, stories.length]);
 
   return (
     <div
@@ -127,7 +155,9 @@ const StoryViewerInner: React.FC<{ user?: StoryUser; onClose: () => void; isVisi
       style={{
         opacity: isVisible ? 1 : 0,
         transform: isVisible ? 'translateY(0) scale(1)' : 'translateY(100%) scale(0.96)',
-        transition: 'opacity 350ms cubic-bezier(0.32,0,0.67,0), transform 350ms cubic-bezier(0.32,0,0.67,0)',
+        transition: reduceMotion
+          ? 'none'
+          : 'opacity 350ms cubic-bezier(0.32,0,0.67,0), transform 350ms cubic-bezier(0.32,0,0.67,0)',
       }}
     >
       <StoryContainer>
@@ -135,7 +165,12 @@ const StoryViewerInner: React.FC<{ user?: StoryUser; onClose: () => void; isVisi
         <StoryHeader user={user} onClose={onClose} />
         <StoryContent />
         <DynamicOverlay />
-        {showFooter && <StoryFooter storyId={currentStoryId} userName={user?.name} />}
+        {!stories.length && (
+          <div className="absolute inset-0 flex items-center justify-center text-white" role="status">
+            No stories available
+          </div>
+        )}
+        {showFooter && currentStoryId && <StoryFooter storyId={currentStoryId} userName={user?.name} />}
       </StoryContainer>
     </div>
   );
@@ -147,30 +182,98 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({
   onClose,
   stories,
   user,
-  initialStoryIndex = 0,
+  initialStoryIndex,
   config = {},
+  ariaLabel,
 }) => {
   // mounted: controls DOM presence; visible: drives CSS animation
   const [mounted, setMounted] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const wasOpenRef = useRef(false);
+  const animationFrameRef = useRef(0);
+  const openingScheduledRef = useRef(false);
+  const reduceMotion = usePrefersReducedMotion();
+  const onOpen = config.onOpen;
+
+  const handleReady = useCallback(() => {
+    if (!isOpen || isVisible || openingScheduledRef.current) return;
+    if (reduceMotion) {
+      setIsVisible(true);
+      return;
+    }
+    openingScheduledRef.current = true;
+    const first = requestAnimationFrame(() => {
+      const second = requestAnimationFrame(() => {
+        openingScheduledRef.current = false;
+        setIsVisible(true);
+      });
+      animationFrameRef.current = second;
+    });
+    animationFrameRef.current = first;
+  }, [isOpen, isVisible, reduceMotion]);
+
+  useEffect(() => () => cancelAnimationFrame(animationFrameRef.current), []);
 
   useEffect(() => {
     if (isOpen) {
       setMounted(true);
-      // Double rAF ensures the initial opacity:0 is painted before we transition
-      requestAnimationFrame(() => requestAnimationFrame(() => setIsVisible(true)));
+      if (!wasOpenRef.current) onOpen?.();
+      wasOpenRef.current = true;
     } else {
+      wasOpenRef.current = false;
+      openingScheduledRef.current = false;
+      cancelAnimationFrame(animationFrameRef.current);
       setIsVisible(false);
-      const t = setTimeout(() => setMounted(false), 380);
+      const t = setTimeout(() => setMounted(false), reduceMotion ? 0 : 380);
       return () => clearTimeout(t);
     }
-  }, [isOpen]);
+  }, [isOpen, onOpen, reduceMotion]);
+
+  useEffect(() => {
+    if (!mounted || !isOpen) return;
+    previousFocusRef.current = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    dialogRef.current?.focus();
+
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab' || !dialogRef.current) return;
+      const focusable = Array.from(
+        dialogRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      );
+      if (!focusable.length) {
+        event.preventDefault();
+        dialogRef.current.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', trapFocus);
+    return () => {
+      document.removeEventListener('keydown', trapFocus);
+      document.body.style.overflow = previousOverflow;
+      previousFocusRef.current?.focus();
+    };
+  }, [isOpen, mounted]);
 
   const mergedConfig = useMemo(
     () => ({
       ...config,
       onClose,
-      keyboardNavigation: true,
+      keyboardNavigation: config.keyboardNavigation ?? true,
       initialStoryIndex: initialStoryIndex ?? config.initialStoryIndex ?? 0,
     }),
     [config, onClose, initialStoryIndex]
@@ -181,11 +284,17 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({
   return (
     // Backdrop
     <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label={ariaLabel ?? (user ? `${user.name}'s stories` : 'Story viewer')}
+      tabIndex={-1}
       className="fixed inset-0 z-[9999] flex items-center justify-center transition-all duration-350 sm:p-4"
       style={{
         backgroundColor: isVisible ? 'rgba(0,0,0,0.85)' : 'rgba(0,0,0,0)',
         backdropFilter: isVisible ? 'blur(8px)' : 'blur(0px)',
-        transitionDuration: '350ms',
+        transitionDuration: reduceMotion ? '0ms' : '350ms',
+        outline: 'none',
       }}
       onClick={(e) => {
         // Close if user clicks the bare backdrop (outside the card)
@@ -195,10 +304,15 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({
       {/* Story card — 100% fullscreen on mobile (100dvh, edge-to-edge, zero margin), floating card on tablet/desktop */}
       <div className="relative w-full h-[100dvh] max-h-[100dvh] sm:h-full sm:max-w-sm sm:max-h-[92dvh] mx-auto overflow-hidden sm:rounded-2xl sm:shadow-2xl">
         <StoryProvider stories={stories} config={mergedConfig}>
-          <StoryViewerInner user={user} onClose={onClose} isVisible={isVisible} />
+          <StoryViewerInner
+            user={user}
+            onClose={onClose}
+            onReady={handleReady}
+            isVisible={isVisible}
+            reduceMotion={reduceMotion}
+          />
         </StoryProvider>
       </div>
     </div>
   );
 };
-

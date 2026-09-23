@@ -20,6 +20,10 @@ export const StoryContainer: React.FC<StoryContainerProps> = ({ children }) => {
   const isDraggingDown = useRef(false);
   /** Tracks whether WE called pause() so we only resume() what we paused. */
   const didPauseRef    = useRef(false);
+  const isRTL =
+    config.dir === 'rtl' ||
+    (typeof document !== 'undefined' &&
+      (document.dir === 'rtl' || document.documentElement.dir === 'rtl'));
 
   // ── Pointer down ─────────────────────────────────────────────────────────
   const handlePointerDown = useCallback(
@@ -29,6 +33,7 @@ export const StoryContainer: React.FC<StoryContainerProps> = ({ children }) => {
 
       touchStartRef.current = { x: e.clientX, y: e.clientY, time: Date.now() };
       isDraggingDown.current = false;
+      e.currentTarget.setPointerCapture?.(e.pointerId);
       pause();
       didPauseRef.current = true;
     },
@@ -97,15 +102,26 @@ export const StoryContainer: React.FC<StoryContainerProps> = ({ children }) => {
         const rect       = containerRef.current?.getBoundingClientRect();
         const relativeX  = e.clientX - (rect?.left ?? 0);
         const totalWidth = rect?.width ?? window.innerWidth;
-        if (relativeX < totalWidth * 0.3) prev();
+        const tappedPreviousSide = isRTL
+          ? relativeX > totalWidth * 0.7
+          : relativeX < totalWidth * 0.3;
+        if (tappedPreviousSide) prev();
         else next();
       }
 
       if (didPauseRef.current) resume();
       didPauseRef.current = false;
     },
-    [next, prev, resume, snapBack],
+    [isRTL, next, prev, resume, snapBack],
   );
+
+  const handlePointerCancel = useCallback(() => {
+    touchStartRef.current = null;
+    isDraggingDown.current = false;
+    snapBack(false);
+    if (didPauseRef.current) resume();
+    didPauseRef.current = false;
+  }, [resume, snapBack]);
 
   // Ensure window pointer release always clears pause state
   useEffect(() => {
@@ -135,17 +151,20 @@ export const StoryContainer: React.FC<StoryContainerProps> = ({ children }) => {
       switch (e.code) {
         case 'Space':
           e.preventDefault();
-          isPaused ? resume() : pause();
+          if (isPaused) resume();
+          else pause();
           break;
 
         case 'ArrowRight':
           e.preventDefault();
-          next();
+          if (isRTL) prev();
+          else next();
           break;
 
         case 'ArrowLeft':
           e.preventDefault();
-          prev();
+          if (isRTL) next();
+          else prev();
           break;
 
         case 'Escape':
@@ -162,7 +181,7 @@ export const StoryContainer: React.FC<StoryContainerProps> = ({ children }) => {
 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [config, next, prev, pause, resume, isPaused, toggleMute]);
+  }, [config, isRTL, next, prev, pause, resume, isPaused, toggleMute]);
 
   return (
     <div
@@ -171,7 +190,7 @@ export const StoryContainer: React.FC<StoryContainerProps> = ({ children }) => {
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
       onContextMenu={(e) => e.preventDefault()}
     >
       {children}

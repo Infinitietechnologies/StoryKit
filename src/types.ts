@@ -199,6 +199,8 @@ export interface StoryRingProps {
 export interface ViewerConfig {
   keyboardNavigation?: boolean;
   defaultDuration?: number;
+  /** Start videos muted so browser autoplay remains reliable. Defaults to true. */
+  defaultMuted?: boolean;
   preloadCount?: number;
   /** Index of the story to start playback from (e.g. first unviewed story). Defaults to 0. */
   initialStoryIndex?: number;

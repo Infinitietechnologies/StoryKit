@@ -1,6 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useInsertionEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useStory } from '../context/StoryContext';
 import { StoryItem } from '../types';
+
+const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
 // Inject smooth transition keyframes once
 const TRANSITION_STYLES = `
@@ -60,7 +62,7 @@ function ensureKeyframe() {
 }
 
 export const StoryContent: React.FC = () => {
-  ensureKeyframe();
+  useInsertionEffect(ensureKeyframe, []);
 
   const {
     stories,
@@ -75,7 +77,8 @@ export const StoryContent: React.FC = () => {
     setError,
     seekVideoProgress,
     next,
-    config,
+    pause,
+    toggleMute,
   } = useStory();
 
   const activeStory = stories[activeIndex];
@@ -85,9 +88,17 @@ export const StoryContent: React.FC = () => {
   const prevIndexRef = useRef<number>(activeIndex);
   const videoRef = useRef<HTMLVideoElement>(null);
   const errorTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const errorHandledRef = useRef(false);
+  const pendingOutgoingStory =
+    prevStoryIdRef.current && prevStoryIdRef.current !== activeStory?.id
+      ? stories.find((story) => story.id === prevStoryIdRef.current) ?? null
+      : null;
+  // This render-time derivation includes the old keyed layer in the very first
+  // commit of a navigation, before the layout effect records transition state.
+  const visibleOutgoingStory = pendingOutgoingStory ?? outgoingStory;
 
   // Handle seamless dual-buffer transition when active story changes
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     if (!activeStory) return;
 
     if (prevStoryIdRef.current && prevStoryIdRef.current !== activeStory.id) {
@@ -106,16 +117,28 @@ export const StoryContent: React.FC = () => {
       prevStoryIdRef.current = activeStory.id;
       prevIndexRef.current = activeIndex;
 
-      // Clean up outgoing buffer after animation finishes
-      const timer = setTimeout(() => {
-        setOutgoingStory(null);
-      }, 270);
-      return () => clearTimeout(timer);
+      return;
     }
 
     prevStoryIdRef.current = activeStory.id;
     prevIndexRef.current = activeIndex;
-  }, [activeStory?.id, activeIndex, stories]);
+  }, [activeStory, activeIndex, stories]);
+
+  // Keep the previous media visible until the incoming media is ready, then
+  // remove it only after both transition animations have completed.
+  useEffect(() => {
+    if (!outgoingStory || !isLoaded) return;
+    const timer = setTimeout(() => setOutgoingStory(null), 270);
+    return () => clearTimeout(timer);
+  }, [isLoaded, outgoingStory]);
+
+  const handleError = useCallback(() => {
+    if (errorHandledRef.current) return;
+    errorHandledRef.current = true;
+    setError('Media failed to load');
+    setBuffering(false);
+    errorTimerRef.current = setTimeout(next, 3000);
+  }, [next, setBuffering, setError]);
 
   // Robust image loading detection: handles cached images, fast renders, and slow networks
   useEffect(() => {
@@ -138,20 +161,12 @@ export const StoryContent: React.FC = () => {
       if (!cancelled) handleError();
     };
 
-    // Safety fallback: ensure viewer never gets frozen if synthetic event is dropped
-    const safetyTimer = setTimeout(() => {
-      if (!cancelled) {
-        setLoaded(true);
-      }
-    }, 2000);
-
     return () => {
       cancelled = true;
-      clearTimeout(safetyTimer);
       img.onload = null;
       img.onerror = null;
     };
-  }, [activeStory?.id, activeStory?.url, activeStory?.type, setLoaded]);
+  }, [activeStory?.id, activeStory?.url, activeStory?.type, handleError, setLoaded]);
 
   // Sync video play/pause with context isPaused
   useEffect(() => {
@@ -160,9 +175,16 @@ export const StoryContent: React.FC = () => {
     if (isPaused) {
       video.pause();
     } else {
-      video.play().catch(() => {/* autoplay policy may block */});
+      video.play().catch(() => {
+        if (!video.muted) {
+          toggleMute();
+          return;
+        }
+        pause();
+        setError('Playback was blocked by the browser');
+      });
     }
-  }, [isPaused, activeStory]);
+  }, [isPaused, isMuted, activeStory, pause, setError, toggleMute]);
 
   // Sync muted state reactively
   useEffect(() => {
@@ -171,24 +193,20 @@ export const StoryContent: React.FC = () => {
 
   // Clear error timer on story change
   useEffect(() => {
+    errorHandledRef.current = false;
+    if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
     return () => {
       if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
     };
   }, [activeIndex]);
 
-  const handleError = () => {
-    setError('Media failed to load');
-    setBuffering(false);
-    errorTimerRef.current = setTimeout(() => next(), 3000);
-  };
-
   if (!activeStory) return null;
 
-  const inAnimation = outgoingStory
+  const inAnimation = visibleOutgoingStory
     ? direction === 'next'
       ? 'storySlideInRight 0.26s cubic-bezier(0.22, 1, 0.36, 1) forwards'
       : 'storySlideInLeft 0.26s cubic-bezier(0.22, 1, 0.36, 1) forwards'
-    : 'storyFadeIn 0.2s ease-out';
+    : 'none';
 
   const outAnimation =
     direction === 'next'
@@ -197,82 +215,60 @@ export const StoryContent: React.FC = () => {
 
   return (
     <div className="absolute inset-0 flex items-center justify-center bg-black overflow-hidden select-none">
-      {/* Outgoing Story Layer: smoothly animates out without dropping to black */}
-      {outgoingStory && (
+      {/* A keyed layer list lets React preserve the decoded media node when an
+          active story becomes outgoing, eliminating the one-frame black flash. */}
+      {[
+        ...(visibleOutgoingStory ? [{ story: visibleOutgoingStory, active: false }] : []),
+        { story: activeStory, active: true },
+      ].map(({ story, active }) => (
         <div
-          key={`out_${outgoingStory.id}`}
-          className="absolute inset-0 z-10 pointer-events-none"
-          style={{ animation: outAnimation, willChange: 'transform, opacity' }}
+          data-storykit-animated="true"
+          key={story.id}
+          className={`absolute inset-0 ${active ? 'z-20' : 'z-10 pointer-events-none'}`}
+          style={{
+            animation: isLoaded ? (active ? inAnimation : outAnimation) : 'none',
+            opacity: isLoaded ? undefined : active ? 0 : 1,
+            willChange: 'transform, opacity',
+          }}
         >
-          {outgoingStory.type === 'image' && outgoingStory.url ? (
+          {story.type === 'image' ? (
             <img
-              src={outgoingStory.url}
-              alt=""
+              ref={active ? (el) => {
+                if (el && el.complete && el.naturalWidth > 0) setLoaded(true);
+              } : undefined}
+              src={story.url}
+              alt={active ? story.altText ?? '' : ''}
               className="w-full h-full object-cover"
               draggable={false}
+              onLoad={active ? () => setLoaded(true) : undefined}
+              onError={active ? handleError : undefined}
             />
-          ) : outgoingStory.type === 'video' && outgoingStory.url ? (
+          ) : (
             <video
-              src={outgoingStory.url}
+              ref={active ? videoRef : undefined}
+              src={story.url}
               className="w-full h-full object-cover"
               playsInline
-              muted
-              autoPlay={false}
-            />
-          ) : null}
-        </div>
-      )}
-
-      {/* Incoming / Active Story Layer */}
-      <div
-        key={`in_${activeStory.id}`}
-        className="absolute inset-0 z-20"
-        style={{ animation: inAnimation, willChange: 'transform, opacity' }}
-      >
-        {activeStory.type === 'image' ? (
-          <img
-            ref={(el) => {
-              if (el && el.complete && el.naturalWidth > 0) {
-                setLoaded(true);
-              }
-            }}
-            src={activeStory.url}
-            alt={activeStory.altText ?? ''}
-            className="w-full h-full object-cover"
-            draggable={false}
-            onLoad={() => setLoaded(true)}
-            onError={handleError}
-          />
-        ) : (
-          <video
-            ref={videoRef}
-            src={activeStory.url}
-            className="w-full h-full object-cover"
-            playsInline
-            autoPlay
-            muted={isMuted}
-            onWaiting={() => setBuffering(true)}
-            onCanPlay={() => { setBuffering(false); setLoaded(true); }}
-            onPlaying={() => { setBuffering(false); setLoaded(true); }}
-            onError={handleError}
-            onTimeUpdate={(e) => {
-              const v = e.currentTarget;
-              if (v.duration > 0) {
-                seekVideoProgress(activeIndex, (v.currentTime / v.duration) * 100);
-              }
-            }}
-            onEnded={() => {
-              seekVideoProgress(activeIndex, 100);
-              config.onStoryEnd?.(activeIndex, activeStory);
-              if (activeIndex >= stories.length - 1) {
-                config.onAllStoriesEnd?.();
-              } else {
+              autoPlay={active}
+              muted={active ? isMuted : true}
+              onWaiting={active ? () => setBuffering(true) : undefined}
+              onCanPlay={active ? () => { setBuffering(false); setLoaded(true); } : undefined}
+              onPlaying={active ? () => { setBuffering(false); setLoaded(true); } : undefined}
+              onError={active ? handleError : undefined}
+              onTimeUpdate={active ? (e) => {
+                const video = e.currentTarget;
+                if (video.duration > 0) {
+                  seekVideoProgress(activeIndex, (video.currentTime / video.duration) * 100);
+                }
+              } : undefined}
+              onEnded={active ? () => {
+                seekVideoProgress(activeIndex, 100);
                 next();
-              }
-            }}
-          />
-        )}
-      </div>
+              } : undefined}
+            />
+          )}
+        </div>
+      ))}
 
       {/* Spinner — loading / buffering */}
       {(!isLoaded || isBuffering) && !error && (

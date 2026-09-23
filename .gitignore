@@ -1,4 +1,7 @@
 node_modules
 dist
 .env
-
+coverage
+*.tgz
+*.log
+.DS_Store

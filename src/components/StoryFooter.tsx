@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useInsertionEffect, useRef, useState } from 'react';
 import { useStory } from '../context/StoryContext';
 
 interface StoryFooterProps {
@@ -25,7 +25,7 @@ function ensureHeartAnim() {
 }
 
 export const StoryFooter: React.FC<StoryFooterProps> = ({ storyId, userName }) => {
-  ensureHeartAnim();
+  useInsertionEffect(ensureHeartAnim, []);
 
   const { pause, resume, config } = useStory();
   const [message, setMessage] = useState('');
@@ -131,6 +131,7 @@ export const StoryFooter: React.FC<StoryFooterProps> = ({ storyId, userName }) =
         {/* Send button — appears when there's text */}
         {message.trim() && (
           <button
+            type="button"
             onClick={handleSend}
             data-interactive="true"
             style={{
@@ -156,6 +157,8 @@ export const StoryFooter: React.FC<StoryFooterProps> = ({ storyId, userName }) =
 
       {/* Like / Heart — bounces and fills on click */}
       <button
+        type="button"
+        data-storykit-animated="true"
         onClick={handleLike}
         data-interactive="true"
         style={{
@@ -189,6 +192,7 @@ export const StoryFooter: React.FC<StoryFooterProps> = ({ storyId, userName }) =
 
       {/* Share / Forward */}
       <button
+        type="button"
         onClick={handleShare}
         data-interactive="true"
         style={{

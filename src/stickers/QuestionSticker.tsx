@@ -106,6 +106,7 @@ export const QuestionSticker: React.FC<QuestionStickerProps> = ({ data, pause, r
           />
           {value.trim() && (
             <button
+              type="button"
               onClick={handleSubmit}
               data-interactive="true"
               style={{

@@ -68,6 +68,7 @@ export const PollSticker: React.FC<PollStickerProps> = ({ data, pause, resume })
 
           return (
             <button
+              type="button"
               key={opt}
               onClick={() => handleVote(opt)}
               data-interactive="true"
