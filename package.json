@@ -1,0 +1,39 @@
+{
+  "name": "react-storykit",
+  "version": "1.0.0",
+  "description": "Modern headless & styled stories status component kit for React. Segmented status rings, interactive Instagram stickers, smooth dual-buffer transitions, and gestures.",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "react",
+    "storykit",
+    "story",
+    "stories",
+    "status",
+    "status-ring",
+    "instagram-stories",
+    "stickers",
+    "viewer",
+    "typescript",
+    "tailwind"
+  ],
+  "author": "",
+  "license": "MIT",
+  "peerDependencies": {
+    "react": ">=17.0.0",
+    "react-dom": ">=17.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "tsup": "^8.0.2",
+    "typescript": "^5.4.2"
+  }
+}
+
