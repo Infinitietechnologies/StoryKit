@@ -79,6 +79,37 @@ uses left/right tap areas and keyboard arrows, with reversed progression in RTL.
 Playback pauses while the tab is hidden. Holding a story or focusing a reply or
 question pauses only that interaction; releasing it preserves a manual pause.
 
+## Per-story interactions and sharing
+
+Each story can independently show or hide reply, like, and share controls:
+
+```tsx
+const story: StoryItem = {
+  id: 'announcement',
+  type: 'image',
+  url: '/announcement.jpg',
+  interactions: { reply: false, like: true, share: true },
+  share: {
+    url: 'https://example.com/stories/announcement',
+    title: 'Our latest announcement',
+  },
+};
+```
+
+Viewer config `showReply`, `showLike`, and `showShare` provide defaults. A story's
+`interactions` overrides those defaults; `showFooter: false` hides the entire
+footer. Disabling all three controls removes the footer completely.
+
+Sharing opens the built-in `StoryShare` dialog, with Copy link and device sharing
+where supported. Set `share.url` to your application's story route or deep link;
+otherwise it shares the media URL. Copy failures show a selectable link instead
+of claiming success. Closing the dialog releases its pause and preserves manual
+pauses. `onShare` receives an opening notification. For an existing custom sharing
+flow, set `shareMode: 'custom'` and implement `onShare`.
+
+`StoryFooter` and `StoryShare` are exported separately for custom compositions
+inside `StoryProvider`.
+
 ## Composable viewer
 
 The lower-level components can be composed inside `StoryProvider`:

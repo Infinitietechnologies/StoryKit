@@ -18,7 +18,9 @@ function QA() {
     id: 'first', type: 'image',
     url: scenario === 'failure' ? '/qa-first.svg?failure=1' : '/qa-first.svg',
     altText: 'Aurora story', duration: 60000,
+    share: { url: 'https://example.test/stories/first', title: 'Aurora story' },
   };
+  if (scenario === 'controls') first.interactions = { reply: false, like: false, share: false };
   if (scenario === 'poll') {
     first.overlays = [{
       id: 'qa-poll', type: 'poll', x: 20, y: 30,
@@ -46,7 +48,10 @@ function QA() {
     scenario === 'video'
       ? { id: 'video', type: 'video', url: '/qa-video.webm', altText: 'Animated color study' }
       : first,
-    { id: 'second', type: 'image', url: '/qa-second.svg', altText: 'Ocean story', duration: 60000 },
+    { id: 'second', type: 'image', url: '/qa-second.svg', altText: 'Ocean story', duration: 60000,
+      ...(scenario === 'controls' ? { interactions: { reply: false, like: false, share: true } } : {}),
+    },
+    ...(scenario === 'controls' ? [{ id: 'third', type: 'image' as const, url: '/qa-first.svg', altText: 'Reply only story', duration: 60000, interactions: { reply: true, like: false, share: false } }] : []),
   ];
 
   return <main>

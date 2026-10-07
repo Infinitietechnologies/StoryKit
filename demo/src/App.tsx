@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   createWebStorageAdapter,
   StoryRing,
@@ -52,6 +52,7 @@ const USERS: { user: StoryUser; stories: StoryItem[] }[] = [
       },
       {
         id: 's1-2',
+        interactions: { share: false },
         url: 'https://images.unsplash.com/photo-1707343843437-caacff5cfa74?q=80&w=900&auto=format&fit=crop',
         type: 'image',
         duration: 8000,
@@ -77,6 +78,7 @@ const USERS: { user: StoryUser; stories: StoryItem[] }[] = [
       },
       {
         id: 's1-3',
+        interactions: { reply: false },
         url: 'https://images.unsplash.com/photo-1469474968028-56623f02e42e?q=80&w=900&auto=format&fit=crop',
         type: 'image',
         duration: 8000,
@@ -117,6 +119,7 @@ const USERS: { user: StoryUser; stories: StoryItem[] }[] = [
     stories: [
       {
         id: 's2-1',
+        interactions: { like: false },
         url: 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?q=80&w=900&auto=format&fit=crop',
         type: 'image',
         duration: 7000,
@@ -143,6 +146,7 @@ const USERS: { user: StoryUser; stories: StoryItem[] }[] = [
       },
       {
         id: 's2-2',
+        interactions: { reply: false, like: false, share: false },
         url: 'https://images.unsplash.com/photo-1501854140801-50d01698950b?q=80&w=900&auto=format&fit=crop',
         type: 'image',
         duration: 6000,
@@ -208,6 +212,7 @@ const USERS: { user: StoryUser; stories: StoryItem[] }[] = [
 export default function App() {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const [activeStartIndex, setActiveStartIndex] = useState<number>(0);
+  const initialLinkProcessed = useRef(false);
 
   const {
     ready,
@@ -220,6 +225,16 @@ export default function App() {
     setVote,
     clear: clearPersistence,
   } = useStoryPersistence({ adapter: persistenceAdapter, key: 'viewer-state' });
+
+  useEffect(() => {
+    if (!ready || initialLinkProcessed.current) return;
+    initialLinkProcessed.current = true;
+    const storyId = new URLSearchParams(window.location.search).get('story');
+    const userIndex = USERS.findIndex(entry => entry.stories.some(story => story.id === storyId));
+    if (userIndex < 0) return;
+    setActiveStartIndex(USERS[userIndex].stories.findIndex(story => story.id === storyId));
+    setOpenIndex(userIndex);
+  }, [ready]);
 
   /** Calculate first unviewed story index for a given user (starts at 0 if all viewed) */
   const getFirstUnviewedIndex = (userEntry: typeof USERS[number]) => {
@@ -278,6 +293,10 @@ export default function App() {
   const active = openIndex !== null ? USERS[openIndex] : null;
   const activeStories = active?.stories.map((story) => ({
     ...story,
+    share: {
+      url: `${window.location.origin}${window.location.pathname}?story=${encodeURIComponent(story.id)}`,
+      title: `${active.user.name}'s story`,
+    },
     overlays: story.overlays?.map((overlay) => overlay.type === 'poll' ? {
       ...overlay,
       data: {

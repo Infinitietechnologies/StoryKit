@@ -268,6 +268,8 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({
 
     const trapFocus = (event: KeyboardEvent) => {
       if (event.key !== 'Tab' || !dialogRef.current) return;
+      // The nested sharing dialog contains its own keyboard focus.
+      if (dialogRef.current.querySelector('[data-storykit-share-dialog]')) return;
       const focusable = Array.from(
         dialogRef.current.querySelectorAll<HTMLElement>(
           'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',

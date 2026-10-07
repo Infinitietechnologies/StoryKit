@@ -55,11 +55,11 @@ test('keyboard focus stays in the modal and close restores its trigger', async (
   const dialog = await openScenario(page);
   await dialog.focus();
   await page.keyboard.press('Shift+Tab');
-  await expect(dialog.getByRole('button', { name: 'Like story' })).toBeFocused();
+  await expect(dialog.getByRole('button', { name: 'Share story' })).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(dialog.getByRole('button', { name: 'Pause story' })).toBeFocused();
   await page.keyboard.press('Shift+Tab');
-  await expect(dialog.getByRole('button', { name: 'Like story' })).toBeFocused();
+  await expect(dialog.getByRole('button', { name: 'Share story' })).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(dialog).not.toBeVisible();
   await expect(page.getByRole('button', { name: 'Open stories' })).toBeFocused();
@@ -234,3 +234,61 @@ for (const direction of ['ltr', 'rtl'] as const) {
     await expect(page.getByTestId('event-log')).toHaveText(/story:first[\s\S]*story:second[\s\S]*story:first/);
   });
 }
+
+test('each story independently controls its reply, like, and share actions', async ({ page, isMobile }) => {
+  const dialog = await openScenario(page, 'controls');
+  await expect(dialog.getByRole('textbox', { name: 'Reply to story' })).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Like story' })).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Share story' })).toHaveCount(0);
+  const advance = async (alt: string) => {
+    const image = dialog.getByAltText(alt);
+    const bounds = (await image.boundingBox())!;
+    const x = bounds.x + bounds.width * 0.85;
+    const y = bounds.y + bounds.height * 0.55;
+    if (isMobile) await page.touchscreen.tap(x, y);
+    else await page.mouse.click(x, y);
+  };
+  await advance('Aurora story');
+  await expect(dialog.getByAltText('Ocean story')).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Share story' })).toBeVisible();
+  await expect(dialog.getByRole('textbox', { name: 'Reply to story' })).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Like story' })).toHaveCount(0);
+  await advance('Ocean story');
+  await expect(dialog.getByAltText('Reply only story')).toBeVisible();
+  await expect(dialog.getByRole('textbox', { name: 'Reply to story' })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: 'Share story' })).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: 'Like story' })).toHaveCount(0);
+});
+
+test('sharing opens a focus-contained dialog with a real link and resumes on dismissal', async ({ page, context, browserName }, testInfo) => {
+  if (browserName === 'chromium') await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  const viewer = await openScenario(page);
+  await viewer.getByRole('button', { name: 'Like story' }).click();
+  await expect(viewer.getByRole('button', { name: 'Pause story' })).toBeVisible();
+  const trigger = viewer.getByRole('button', { name: 'Share story', exact: true });
+  await trigger.click();
+  const sheet = page.getByRole('dialog', { name: 'Share story', exact: true });
+  await expect(sheet).toBeVisible();
+  await expect(viewer.getByRole('button', { name: 'Resume story' })).toBeVisible();
+  await expect(sheet.getByRole('textbox', { name: 'Story link' })).toHaveValue('https://example.test/stories/first');
+  const close = sheet.getByRole('button', { name: 'Close sharing' });
+  await expect(close).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(sheet.getByRole('button').last()).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(close).toBeFocused();
+  await sheet.getByRole('button', { name: 'Copy link' }).click();
+  if (browserName === 'chromium') {
+    await expect(sheet.getByRole('status')).toHaveText('Link copied');
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('https://example.test/stories/first');
+  } else {
+    await expect(sheet.getByRole('status')).toHaveText(/Link copied|Could not copy automatically/);
+  }
+  await page.screenshot({ path: 'test-results/share-' + testInfo.project.name + '.png', animations: 'disabled' });
+  await page.keyboard.press('Escape');
+  await expect(sheet).toHaveCount(0);
+  await expect(viewer).toBeVisible();
+  await expect(trigger).toBeFocused();
+  await expect(viewer.getByRole('button', { name: 'Pause story' })).toBeVisible();
+  await expect(page.getByTestId('event-log')).not.toContainText('story:second');
+});

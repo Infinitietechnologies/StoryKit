@@ -8,6 +8,7 @@ export * from './components/DynamicOverlay';
 export * from './components/StoryRing';
 export * from './components/StoryViewer';
 export * from './components/StoryFooter';
+export * from './components/StoryShare';
 
 // Stickers (individual exports for consumers who want to use them standalone)
 export * from './stickers/TextSticker';

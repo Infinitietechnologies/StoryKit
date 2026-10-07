@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useInsertionEffect, useRef, useState } from 'react';
 import { useStory } from '../context/StoryContext';
+import { StoryShare } from './StoryShare';
 
-interface StoryFooterProps {
+export interface StoryFooterProps {
   storyId: string;
   /** Optional — shown in the input placeholder */
   userName?: string;
@@ -27,7 +28,14 @@ function ensureHeartAnim() {
 export const StoryFooter: React.FC<StoryFooterProps> = ({ storyId, userName }) => {
   useInsertionEffect(ensureHeartAnim, []);
 
-  const { pause, resume, config } = useStory();
+  const { pause, resume, config, stories, playbackKey } = useStory();
+  const story = stories.find(item => item.id === storyId);
+  const showReply = story?.interactions?.reply ?? config.showReply ?? true;
+  const showLike = story?.interactions?.like ?? config.showLike ?? true;
+  const showShare = (story?.interactions?.share ?? config.showShare ?? true)
+    && (config.shareMode === 'custom' ? Boolean(config.onShare) : Boolean(story));
+  const [shareOpen, setShareOpen] = useState(false);
+  const shareButtonRef = useRef<HTMLButtonElement>(null);
   const [message, setMessage] = useState('');
   const [liked,   setLiked]   = useState(false);
   const [popping, setPopping] = useState(false);
@@ -55,6 +63,7 @@ export const StoryFooter: React.FC<StoryFooterProps> = ({ storyId, userName }) =
     setPopping(false);
     setReplyStatus('');
     setSubmitting(false);
+    setShareOpen(false);
     sendingRef.current = false;
     replyVersionRef.current += 1;
     return () => {
@@ -66,8 +75,15 @@ export const StoryFooter: React.FC<StoryFooterProps> = ({ storyId, userName }) =
   }, [storyId, releaseFocusPause]);
 
   useEffect(() => {
+    if (!showReply || config.showFooter === false) releaseFocusPause();
+    if (!showShare || config.showFooter === false) setShareOpen(false);
+  }, [showReply, showShare, config.showFooter, releaseFocusPause]);
+
+  useEffect(() => {
     if (persistedLiked !== undefined) setLiked(persistedLiked);
   }, [persistedLiked, storyId]);
+
+  useEffect(() => { setShareOpen(false); }, [playbackKey]);
 
   const handleSend = async () => {
     const trimmed = message.trim();
@@ -113,22 +129,25 @@ export const StoryFooter: React.FC<StoryFooterProps> = ({ storyId, userName }) =
     }
   };
 
-  const handleShare = () => config.onShare?.(storyId);
+  const handleShare = async () => {
+    const version = replyVersionRef.current;
+    if (config.shareMode !== 'custom') setShareOpen(true);
+    try {
+      await config.onShare?.(storyId);
+    } catch {
+      if (config.shareMode === 'custom' && version === replyVersionRef.current)
+        setReplyStatus('Sharing could not be opened. Try again.');
+    }
+  };
+
+  if (config.showFooter === false || (!showReply && !showLike && !showShare)) return null;
 
   const placeholder = userName ? `Reply to ${userName}…` : 'Send message…';
 
-  return (
+  return (<>
     <div
       data-interactive="true"
       aria-busy={submitting}
-      onFocus={() => {
-        if (focusPausedRef.current) return;
-        focusPausedRef.current = true;
-        pause(pauseReason);
-      }}
-      onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) releaseFocusPause();
-      }}
       style={{
         position: 'absolute',
         bottom: 0,
@@ -142,6 +161,7 @@ export const StoryFooter: React.FC<StoryFooterProps> = ({ storyId, userName }) =
         paddingBottom: 'max(14px, env(safe-area-inset-bottom, 14px))',
         display: 'flex',
         alignItems: 'center',
+        justifyContent: showReply ? 'flex-start' : 'flex-end',
         gap: '10px',
         fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
       }}
@@ -154,7 +174,15 @@ export const StoryFooter: React.FC<StoryFooterProps> = ({ storyId, userName }) =
       }}
     >
       {/* Reply input pill */}
-      <div
+      {showReply && <div
+        onFocus={() => {
+          if (focusPausedRef.current) return;
+          focusPausedRef.current = true;
+          pause(pauseReason);
+        }}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) releaseFocusPause();
+        }}
         style={{
           flex: 1,
           minWidth: 0,
@@ -231,10 +259,10 @@ export const StoryFooter: React.FC<StoryFooterProps> = ({ storyId, userName }) =
             </svg>
           </button>
         )}
-      </div>
+      </div>}
 
       {/* Like / Heart — bounces and fills on click */}
-      <button
+      {showLike && <button
         type="button"
         data-storykit-animated="true"
         onClick={handleLike}
@@ -270,10 +298,11 @@ export const StoryFooter: React.FC<StoryFooterProps> = ({ storyId, userName }) =
         >
           <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
         </svg>
-      </button>
+      </button>}
 
       {/* Share / Forward */}
-      {config.onShare && <button
+      {showShare && <button
+        ref={shareButtonRef}
         type="button"
         onClick={handleShare}
         data-interactive="true"
@@ -304,5 +333,12 @@ export const StoryFooter: React.FC<StoryFooterProps> = ({ storyId, userName }) =
         {replyStatus}
       </span>
     </div>
-  );
+    {shareOpen && showShare && story && <StoryShare
+      key={storyId}
+      story={story}
+      userName={userName}
+      onClose={() => setShareOpen(false)}
+      returnFocusRef={shareButtonRef}
+    />}
+  </>);
 };

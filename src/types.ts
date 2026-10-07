@@ -122,6 +122,19 @@ export type OverlayItem = StoryOverlay;
 // Story item
 // ─────────────────────────────────────────────────────────────────────────────
 
+export interface StoryInteractions {
+  reply?: boolean;
+  like?: boolean;
+  share?: boolean;
+}
+
+export interface StoryShareData {
+  /** Story page/deep link. Defaults to the story's media URL when omitted. */
+  url?: string;
+  title?: string;
+  text?: string;
+}
+
 export interface StoryItem {
   id: string;
   url: string;
@@ -131,6 +144,10 @@ export interface StoryItem {
   overlays?: StoryOverlay[];
   altText?: string;
   actionLink?: string;
+  /** Per-story overrides for the viewer's reply, like, and share defaults. */
+  interactions?: StoryInteractions;
+  /** Metadata for the built-in sharing dialog. */
+  share?: StoryShareData;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -229,8 +246,14 @@ export interface ViewerConfig {
   isStoryLiked?: (storyId: string) => boolean;
   /** Called for both like and unlike transitions. */
   onLikeChange?: (storyId: string, liked: boolean) => void;
-  /** Called when viewer taps the share button */
-  onShare?: (storyId: string) => void;
+  /** Notification when sharing opens; with shareMode='custom', handles sharing itself. */
+  onShare?: (storyId: string) => void | Promise<void>;
+  /** Built-in dialog by default; 'custom' delegates to onShare. */
+  shareMode?: 'builtin' | 'custom';
+  /** Footer defaults, overridden by each story's interactions flags. */
+  showReply?: boolean;
+  showLike?: boolean;
+  showShare?: boolean;
   /** Called when viewer taps a @mention sticker */
   onMention?: (username: string) => void;
   /** Called when viewer taps a #hashtag sticker */
