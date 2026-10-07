@@ -1,4 +1,4 @@
-import React, { useEffect, useInsertionEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useInsertionEffect, useRef, useState } from 'react';
 import { useStory } from '../context/StoryContext';
 
 interface StoryFooterProps {
@@ -31,29 +31,67 @@ export const StoryFooter: React.FC<StoryFooterProps> = ({ storyId, userName }) =
   const [message, setMessage] = useState('');
   const [liked,   setLiked]   = useState(false);
   const [popping, setPopping] = useState(false);
+  const [replyStatus, setReplyStatus] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const focusPausedRef = useRef(false);
+  const popTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const replyVersionRef = useRef(0);
+  const sendingRef = useRef(false);
   const persistedLiked = config.isStoryLiked?.(storyId);
+  const pauseReason = `reply:${storyId}`;
+
+  const releaseFocusPause = useCallback(() => {
+    if (!focusPausedRef.current) return;
+    focusPausedRef.current = false;
+    resume(pauseReason);
+  }, [pauseReason, resume]);
 
   // Reset per-story state when story changes
   useEffect(() => {
+    inputRef.current?.blur();
     setLiked(false);
     setMessage('');
     setPopping(false);
-  }, [storyId]);
+    setReplyStatus('');
+    setSubmitting(false);
+    sendingRef.current = false;
+    replyVersionRef.current += 1;
+    return () => {
+      replyVersionRef.current += 1;
+      if (popTimerRef.current) clearTimeout(popTimerRef.current);
+      popTimerRef.current = null;
+      releaseFocusPause();
+    };
+  }, [storyId, releaseFocusPause]);
 
   useEffect(() => {
     if (persistedLiked !== undefined) setLiked(persistedLiked);
   }, [persistedLiked, storyId]);
 
-  const handleFocus = () => pause();
-  const handleBlur  = () => resume();
-
-  const handleSend = () => {
+  const handleSend = async () => {
     const trimmed = message.trim();
-    if (!trimmed) return;
-    config.onReply?.(trimmed, storyId);
-    setMessage('');
-    inputRef.current?.blur();  // blur triggers handleBlur → resume()
+    if (!trimmed || !config.onReply || sendingRef.current) return;
+    const version = ++replyVersionRef.current;
+    sendingRef.current = true;
+    setSubmitting(true);
+    setReplyStatus('Submitting reply…');
+    try {
+      await config.onReply(trimmed, storyId);
+      if (version !== replyVersionRef.current) return;
+      setMessage('');
+      setReplyStatus('Reply submitted');
+      inputRef.current?.blur();
+      releaseFocusPause();
+    } catch {
+      if (version !== replyVersionRef.current) return;
+      setReplyStatus('Reply could not be submitted. Try again.');
+    } finally {
+      if (version === replyVersionRef.current) {
+        sendingRef.current = false;
+        setSubmitting(false);
+      }
+    }
   };
 
   const handleLike = () => {
@@ -63,7 +101,15 @@ export const StoryFooter: React.FC<StoryFooterProps> = ({ storyId, userName }) =
     if (next) {
       setPopping(true);
       config.onLike?.(storyId);
-      setTimeout(() => setPopping(false), 500);
+      if (popTimerRef.current) clearTimeout(popTimerRef.current);
+      popTimerRef.current = setTimeout(() => {
+        setPopping(false);
+        popTimerRef.current = null;
+      }, 500);
+    } else {
+      if (popTimerRef.current) clearTimeout(popTimerRef.current);
+      popTimerRef.current = null;
+      setPopping(false);
     }
   };
 
@@ -74,6 +120,15 @@ export const StoryFooter: React.FC<StoryFooterProps> = ({ storyId, userName }) =
   return (
     <div
       data-interactive="true"
+      aria-busy={submitting}
+      onFocus={() => {
+        if (focusPausedRef.current) return;
+        focusPausedRef.current = true;
+        pause(pauseReason);
+      }}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) releaseFocusPause();
+      }}
       style={{
         position: 'absolute',
         bottom: 0,
@@ -92,43 +147,59 @@ export const StoryFooter: React.FC<StoryFooterProps> = ({ storyId, userName }) =
       }}
       onPointerDown={(e) => e.stopPropagation()}
       onPointerUp={(e) => e.stopPropagation()}
+      onPointerCancel={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (e.key !== 'Tab' && e.key !== 'Escape') e.stopPropagation();
+      }}
     >
       {/* Reply input pill */}
       <div
         style={{
           flex: 1,
+          minWidth: 0,
           display: 'flex',
           alignItems: 'center',
           gap: '8px',
-          background: 'rgba(255,255,255,0.13)',
+          background: 'rgba(0,0,0,0.55)',
           backdropFilter: 'blur(12px)',
           WebkitBackdropFilter: 'blur(12px)',
           border: '1.5px solid rgba(255,255,255,0.28)',
           borderRadius: '100px',
           padding: '9px 14px',
+          minHeight: '44px',
           transition: 'border-color 0.2s ease',
         }}
       >
         <input
           ref={inputRef}
+          data-storykit-reply="true"
           value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          onFocus={handleFocus}      // ← pauses story timer
-          onBlur={handleBlur}        // ← resumes story timer
-          onKeyDown={(e) => {
-            e.stopPropagation();     // prevents Space/Arrow from triggering story nav while typing
-            if (e.key === 'Enter') handleSend();
-            if (e.key === 'Escape') inputRef.current?.blur();
+          onChange={(e) => {
+            setMessage(e.target.value);
+            setReplyStatus('');
           }}
-          placeholder={placeholder}
+          disabled={!config.onReply}
+          readOnly={submitting}
+          onKeyDown={(e) => {
+            if (e.key !== 'Tab' && e.key !== 'Escape') e.stopPropagation();
+            if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              void handleSend();
+            }
+            if (e.key === 'Escape') {
+              inputRef.current?.blur();
+            }
+          }}
+          placeholder={config.onReply ? placeholder : 'Replies unavailable'}
           maxLength={300}
           style={{
             flex: 1,
+            minWidth: 0,
             background: 'transparent',
             border: 'none',
-            outline: 'none',
             color: '#fff',
-            fontSize: '14px',
+            fontSize: '16px',
             fontFamily: 'inherit',
           }}
           aria-label="Reply to story"
@@ -139,17 +210,18 @@ export const StoryFooter: React.FC<StoryFooterProps> = ({ storyId, userName }) =
           <button
             type="button"
             onClick={handleSend}
+            disabled={submitting}
             data-interactive="true"
             style={{
               background: 'rgba(255,255,255,0.9)',
               border: 'none',
               borderRadius: '50%',
-              width: '26px',
-              height: '26px',
+              width: '44px',
+              height: '44px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              cursor: 'pointer',
+              cursor: submitting ? 'wait' : 'pointer',
               flexShrink: 0,
             }}
             aria-label="Send reply"
@@ -172,6 +244,9 @@ export const StoryFooter: React.FC<StoryFooterProps> = ({ storyId, userName }) =
           border: 'none',
           cursor: 'pointer',
           padding: '4px',
+          width: '44px',
+          height: '44px',
+          flexShrink: 0,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -179,6 +254,7 @@ export const StoryFooter: React.FC<StoryFooterProps> = ({ storyId, userName }) =
           transition: 'color 0.2s ease',
         }}
         aria-label={liked ? 'Unlike story' : 'Like story'}
+        aria-pressed={liked}
         title={liked ? 'Unlike' : 'Like'}
       >
         <svg
@@ -197,7 +273,7 @@ export const StoryFooter: React.FC<StoryFooterProps> = ({ storyId, userName }) =
       </button>
 
       {/* Share / Forward */}
-      <button
+      {config.onShare && <button
         type="button"
         onClick={handleShare}
         data-interactive="true"
@@ -206,6 +282,9 @@ export const StoryFooter: React.FC<StoryFooterProps> = ({ storyId, userName }) =
           border: 'none',
           cursor: 'pointer',
           padding: '4px',
+          width: '44px',
+          height: '44px',
+          flexShrink: 0,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -217,7 +296,13 @@ export const StoryFooter: React.FC<StoryFooterProps> = ({ storyId, userName }) =
           <line x1="22" y1="2" x2="11" y2="13" />
           <polygon points="22 2 15 22 11 13 2 9 22 2" />
         </svg>
-      </button>
+      </button>}
+      <span
+        role="status"
+        style={{ position: 'absolute', bottom: '100%', left: '12px', right: '12px', color: '#fff', background: 'rgba(0,0,0,0.8)', borderRadius: '12px', padding: replyStatus ? '8px 12px' : 0, fontSize: '13px', textAlign: 'center', pointerEvents: 'none' }}
+      >
+        {replyStatus}
+      </span>
     </div>
   );
 };

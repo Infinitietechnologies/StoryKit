@@ -62,14 +62,14 @@ const IconMute = () => (
 
 // ── Inner header — must be inside StoryProvider to access useStory ───────────
 const StoryHeader: React.FC<{ user?: StoryUser; onClose: () => void }> = ({ user, onClose }) => {
-  const { toggleMute, isMuted } = useStory();
+  const { toggleMute, isMuted, isPaused, pause, resume, activeIndex, stories } = useStory();
 
   /** Stop pointer events from bubbling to StoryContainer so buttons don't trigger nav */
   const stopPointer = (e: React.PointerEvent) => e.stopPropagation();
 
   return (
     <div
-      className="absolute top-5 sm:top-7 left-0 right-0 z-40 px-3 pb-2 flex items-center gap-2 pointer-events-none"
+      className="absolute top-5 sm:top-7 left-0 right-0 z-40 px-3 pb-6 flex items-center gap-2 pointer-events-none bg-gradient-to-b from-black/70 to-transparent"
       style={{
         paddingTop: 'max(4px, env(safe-area-inset-top, 0px))',
       }}
@@ -91,12 +91,15 @@ const StoryHeader: React.FC<{ user?: StoryUser; onClose: () => void }> = ({ user
               {user.name}
             </span>
             {user.timestamp && (
-              <span className="text-white/55 text-[11px] leading-tight">{user.timestamp}</span>
+              <span className="text-white/85 text-[11px] leading-tight">{user.timestamp}</span>
             )}
           </div>
         </div>
       )}
       {!user && <div className="flex-1" />}
+      <span className="sr-only" aria-live="polite" aria-atomic="true">
+        {stories.length ? `Story ${activeIndex + 1} of ${stories.length}` : 'No stories available'}
+      </span>
 
       {/* Controls — pointer-events-auto + stopPropagation blocks StoryContainer from intercepting */}
       <div
@@ -106,10 +109,21 @@ const StoryHeader: React.FC<{ user?: StoryUser; onClose: () => void }> = ({ user
       >
         <button
           type="button"
+          onClick={() => isPaused ? resume() : pause()}
+          aria-label={isPaused ? 'Resume story' : 'Pause story'}
+          title={isPaused ? 'Resume (Space)' : 'Pause (Space)'}
+          className="min-w-[44px] min-h-[44px] flex items-center justify-center text-white bg-transparent border-0 p-0 appearance-none hover:bg-white/15 rounded-full"
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor">
+            {isPaused ? <path d="M8 5v14l11-7z" /> : <path d="M7 5h4v14H7zm6 0h4v14h-4z" />}
+          </svg>
+        </button>
+        <button
+          type="button"
           onClick={toggleMute}
           aria-label={isMuted ? 'Unmute (M)' : 'Mute (M)'}
           title={isMuted ? 'Unmute (M)' : 'Mute (M)'}
-          className="p-2 text-white/75 hover:text-white hover:bg-white/10 active:scale-90 transition-all duration-150 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+          className="min-w-[44px] min-h-[44px] flex items-center justify-center text-white bg-transparent border-0 p-0 appearance-none hover:bg-white/15 rounded-full"
         >
           {isMuted ? <IconMute /> : <IconVolume />}
         </button>
@@ -118,7 +132,7 @@ const StoryHeader: React.FC<{ user?: StoryUser; onClose: () => void }> = ({ user
           onClick={onClose}
           aria-label="Close (Esc)"
           title="Close (Esc)"
-          className="p-2 text-white/75 hover:text-white hover:bg-white/10 active:scale-90 transition-all duration-150 rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+          className="min-w-[44px] min-h-[44px] flex items-center justify-center text-white bg-transparent border-0 p-0 appearance-none hover:bg-white/15 rounded-full"
         >
           <IconClose />
         </button>
@@ -133,21 +147,29 @@ const StoryViewerInner: React.FC<{
   onClose: () => void;
   onReady: () => void;
   isVisible: boolean;
+  isOpen: boolean;
   reduceMotion: boolean;
 }> = ({
   user,
   onClose,
   onReady,
   isVisible,
+  isOpen,
   reduceMotion,
 }) => {
-  const { stories, activeIndex, config, isLoaded } = useStory();
+  const { stories, activeIndex, config, pause, resume } = useStory();
   const showFooter = config.showFooter !== false;
   const currentStoryId = stories[activeIndex]?.id ?? '';
 
   useEffect(() => {
-    if (isLoaded || !stories.length) onReady();
-  }, [isLoaded, onReady, stories.length]);
+    if (isOpen) resume('closed');
+    else pause('closed');
+    return () => resume('closed');
+  }, [isOpen, pause, resume]);
+
+  useEffect(() => {
+    onReady();
+  }, [onReady]);
 
   return (
     <div
@@ -189,13 +211,15 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({
   // mounted: controls DOM presence; visible: drives CSS animation
   const [mounted, setMounted] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
+  const [playbackSession, setPlaybackSession] = useState(0);
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const wasOpenRef = useRef(false);
   const animationFrameRef = useRef(0);
   const openingScheduledRef = useRef(false);
   const reduceMotion = usePrefersReducedMotion();
-  const onOpen = config.onOpen;
+  const onOpenRef = useRef(config.onOpen);
+  onOpenRef.current = config.onOpen;
 
   const handleReady = useCallback(() => {
     if (!isOpen || isVisible || openingScheduledRef.current) return;
@@ -219,7 +243,10 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({
   useEffect(() => {
     if (isOpen) {
       setMounted(true);
-      if (!wasOpenRef.current) onOpen?.();
+      if (!wasOpenRef.current) {
+        setPlaybackSession((session) => session + 1);
+        onOpenRef.current?.();
+      }
       wasOpenRef.current = true;
     } else {
       wasOpenRef.current = false;
@@ -229,7 +256,7 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({
       const t = setTimeout(() => setMounted(false), reduceMotion ? 0 : 380);
       return () => clearTimeout(t);
     }
-  }, [isOpen, onOpen, reduceMotion]);
+  }, [isOpen, reduceMotion]);
 
   useEffect(() => {
     if (!mounted || !isOpen) return;
@@ -244,7 +271,7 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({
         dialogRef.current.querySelectorAll<HTMLElement>(
           'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
         ),
-      );
+      ).filter((element) => getComputedStyle(element).display !== 'none' && getComputedStyle(element).visibility !== 'hidden');
       if (!focusable.length) {
         event.preventDefault();
         dialogRef.current.focus();
@@ -252,18 +279,19 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({
       }
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
+      const focused = document.activeElement;
+      if (event.shiftKey && (focused === first || focused === dialogRef.current || !dialogRef.current.contains(focused))) {
         event.preventDefault();
         last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
+      } else if (!event.shiftKey && (focused === last || !dialogRef.current.contains(focused))) {
         event.preventDefault();
         first.focus();
       }
     };
 
-    document.addEventListener('keydown', trapFocus);
+    document.addEventListener('keydown', trapFocus, true);
     return () => {
-      document.removeEventListener('keydown', trapFocus);
+      document.removeEventListener('keydown', trapFocus, true);
       document.body.style.overflow = previousOverflow;
       previousFocusRef.current?.focus();
     };
@@ -273,10 +301,15 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({
     () => ({
       ...config,
       onClose,
-      keyboardNavigation: config.keyboardNavigation ?? true,
+      keyboardNavigation: isOpen && (config.keyboardNavigation ?? true),
+      onStoryViewed: isOpen ? config.onStoryViewed : undefined,
+      onStoryEnd: isOpen ? config.onStoryEnd : undefined,
+      onStoryChange: isOpen ? config.onStoryChange : undefined,
+      onAllStoriesEnd: isOpen ? config.onAllStoriesEnd : undefined,
+      onStartReached: isOpen ? config.onStartReached : undefined,
       initialStoryIndex: initialStoryIndex ?? config.initialStoryIndex ?? 0,
     }),
-    [config, onClose, initialStoryIndex]
+    [config, onClose, initialStoryIndex, isOpen]
   );
 
   if (!mounted) return null;
@@ -287,6 +320,7 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({
       ref={dialogRef}
       role="dialog"
       aria-modal="true"
+      data-storykit-root="true"
       aria-label={ariaLabel ?? (user ? `${user.name}'s stories` : 'Story viewer')}
       tabIndex={-1}
       className="fixed inset-0 z-[9999] flex items-center justify-center transition-all duration-350 sm:p-4"
@@ -295,6 +329,7 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({
         backdropFilter: isVisible ? 'blur(8px)' : 'blur(0px)',
         transitionDuration: reduceMotion ? '0ms' : '350ms',
         outline: 'none',
+        pointerEvents: isOpen ? 'auto' : 'none',
       }}
       onClick={(e) => {
         // Close if user clicks the bare backdrop (outside the card)
@@ -303,12 +338,13 @@ export const StoryViewer: React.FC<StoryViewerProps> = ({
     >
       {/* Story card — 100% fullscreen on mobile (100dvh, edge-to-edge, zero margin), floating card on tablet/desktop */}
       <div className="relative w-full h-[100dvh] max-h-[100dvh] sm:h-full sm:max-w-sm sm:max-h-[92dvh] mx-auto overflow-hidden sm:rounded-2xl sm:shadow-2xl">
-        <StoryProvider stories={stories} config={mergedConfig}>
+        <StoryProvider key={playbackSession} stories={stories} config={mergedConfig}>
           <StoryViewerInner
             user={user}
             onClose={onClose}
             onReady={handleReady}
             isVisible={isVisible}
+            isOpen={isOpen}
             reduceMotion={reduceMotion}
           />
         </StoryProvider>

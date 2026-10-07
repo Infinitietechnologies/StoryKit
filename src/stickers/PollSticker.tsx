@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { PollStickerData } from '../types';
 
 interface PollStickerProps {
@@ -11,24 +11,80 @@ interface PollStickerProps {
 export const PollSticker: React.FC<PollStickerProps> = ({ data, pause, resume }) => {
   const { question, optionA, optionB, selectedOption, onVote } = data;
   const [voted, setVoted] = useState<'A' | 'B' | null>(selectedOption ?? null);
+  const [submitting, setSubmitting] = useState(false);
+  const [voteError, setVoteError] = useState('');
+  const callbacksRef = useRef({ pause, resume });
+  callbacksRef.current = { pause, resume };
+  const pausedRef = useRef(false);
+  const focusedRef = useRef(false);
+  const pointerRef = useRef<number | null>(null);
+  const voteVersionRef = useRef(0);
+  const submittingRef = useRef(false);
+
+  const pauseInteraction = useCallback(() => {
+    if (pausedRef.current || !callbacksRef.current.pause) return;
+    pausedRef.current = true;
+    callbacksRef.current.pause();
+  }, []);
+
+  const releaseInteraction = useCallback(() => {
+    if (!pausedRef.current) return;
+    pausedRef.current = false;
+    callbacksRef.current.resume?.();
+  }, []);
+
+  const releasePointer = useCallback(() => {
+    pointerRef.current = null;
+    if (!focusedRef.current) releaseInteraction();
+  }, [releaseInteraction]);
 
   useEffect(() => {
+    voteVersionRef.current += 1;
     setVoted(selectedOption ?? null);
-  }, [selectedOption]);
+    setSubmitting(false);
+    setVoteError('');
+    submittingRef.current = false;
+    focusedRef.current = false;
+    pointerRef.current = null;
+    releaseInteraction();
+  }, [question, optionA, optionB, selectedOption, releaseInteraction]);
 
-  // Simulated base vote distribution (real apps pass these via data.initialVotes)
-  const base = { A: 48, B: 52 };
-  const total  = (base.A + base.B) + (voted ? 1 : 0);
-  const countA = base.A + (voted === 'A' ? 1 : 0);
-  const pctA   = Math.round((countA / total) * 100);
-  const pctB   = 100 - pctA;
+  useEffect(() => {
+    const finishPointer = (event: PointerEvent) => {
+      if (pointerRef.current !== null && pointerRef.current === event.pointerId) releasePointer();
+    };
+    window.addEventListener('pointerup', finishPointer);
+    window.addEventListener('pointercancel', finishPointer);
+    return () => {
+      window.removeEventListener('pointerup', finishPointer);
+      window.removeEventListener('pointercancel', finishPointer);
+      voteVersionRef.current += 1;
+      releaseInteraction();
+    };
+  }, [releaseInteraction, releasePointer]);
 
-  const handleVote = (option: 'A' | 'B') => {
-    if (voted) return;
-    setVoted(option);
-    onVote?.(option);
-    // Resume story after vote so it continues
-    resume?.();
+  const handleVote = async (option: 'A' | 'B') => {
+    if (voted || submittingRef.current) return;
+    const version = ++voteVersionRef.current;
+    submittingRef.current = true;
+    setSubmitting(true);
+    setVoteError('');
+    try {
+      await onVote?.(option);
+      if (version !== voteVersionRef.current) return;
+      setVoted(option);
+      focusedRef.current = false;
+      pointerRef.current = null;
+      releaseInteraction();
+    } catch {
+      if (version !== voteVersionRef.current) return;
+      setVoteError('Vote could not be submitted. Try again.');
+    } finally {
+      if (version === voteVersionRef.current) {
+        submittingRef.current = false;
+        setSubmitting(false);
+      }
+    }
   };
 
   return (
@@ -36,15 +92,39 @@ export const PollSticker: React.FC<PollStickerProps> = ({ data, pause, resume })
       data-interactive="true"
       onPointerDown={(e) => {
         e.stopPropagation();
-        pause?.();
+        if (voted || submittingRef.current) return;
+        pointerRef.current = e.pointerId;
+        pauseInteraction();
       }}
       onPointerUp={(e) => {
         e.stopPropagation();
-        if (!voted) resume?.();
+        releasePointer();
       }}
+      onPointerCancel={(e) => {
+        e.stopPropagation();
+        releasePointer();
+      }}
+      onLostPointerCapture={releasePointer}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (e.key !== 'Tab' && e.key !== 'Escape') e.stopPropagation();
+      }}
+      onFocus={() => {
+        if (voted || submittingRef.current) return;
+        focusedRef.current = true;
+        pauseInteraction();
+      }}
+      onBlur={(e) => {
+        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+        focusedRef.current = false;
+        if (pointerRef.current === null) releaseInteraction();
+      }}
+      role="group"
+      aria-label={question}
+      aria-busy={submitting}
       style={{
         width: '220px',
-        background: 'rgba(255,255,255,0.15)',
+        background: 'rgba(0,0,0,0.72)',
         backdropFilter: 'blur(16px)',
         WebkitBackdropFilter: 'blur(16px)',
         border: '1.5px solid rgba(255,255,255,0.3)',
@@ -55,7 +135,7 @@ export const PollSticker: React.FC<PollStickerProps> = ({ data, pause, resume })
       }}
     >
       {/* Emoji header */}
-      <p style={{ color: '#fff', fontWeight: 700, fontSize: '12px', textAlign: 'center', margin: '0 0 2px', opacity: 0.7, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+      <p style={{ color: '#fff', fontWeight: 700, fontSize: '12px', textAlign: 'center', margin: '0 0 2px', opacity: 0.85, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
         POLL
       </p>
       {/* Question */}
@@ -67,16 +147,15 @@ export const PollSticker: React.FC<PollStickerProps> = ({ data, pause, resume })
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
         {(['A', 'B'] as const).map((opt) => {
           const label   = opt === 'A' ? optionA : optionB;
-          const pct     = opt === 'A' ? pctA : pctB;
           const isVoted = voted === opt;
 
           return (
             <button
               type="button"
               key={opt}
-              onClick={() => handleVote(opt)}
+              onClick={() => void handleVote(opt)}
               data-interactive="true"
-              disabled={voted !== null}
+              disabled={voted !== null || submitting}
               style={{
                 position: 'relative',
                 overflow: 'hidden',
@@ -84,6 +163,7 @@ export const PollSticker: React.FC<PollStickerProps> = ({ data, pause, resume })
                 fontWeight: 700,
                 fontSize: '14px',
                 padding: '10px 14px',
+                minHeight: '44px',
                 borderRadius: '12px',
                 border: isVoted
                   ? '2px solid rgba(255,255,255,0.95)'
@@ -94,22 +174,21 @@ export const PollSticker: React.FC<PollStickerProps> = ({ data, pause, resume })
                 transition: 'border-color 0.2s ease',
               }}
               aria-label={`Vote for: ${label}`}
+              aria-pressed={isVoted}
             >
-              {/* Animated fill bar shown after voting */}
+              {/* Selection highlight shown after voting */}
               {voted !== null && (
                 <span
                   style={{
                     position: 'absolute',
                     inset: 0,
-                    background: isVoted ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)',
+                    background: isVoted ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.08)',
                     transformOrigin: 'left center',
-                    transform: `scaleX(${pct / 100})`,
-                    transition: 'transform 0.55s cubic-bezier(0.22,1,0.36,1)',
                   }}
                 />
               )}
               <span style={{ position: 'relative', zIndex: 1 }}>
-                {voted !== null ? `${label}  ${pct}%` : label}
+                {label}
                 {isVoted && ' ✓'}
               </span>
             </button>
@@ -118,11 +197,9 @@ export const PollSticker: React.FC<PollStickerProps> = ({ data, pause, resume })
       </div>
 
       {/* Post-vote nudge */}
-      {voted && (
-        <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: '11px', textAlign: 'center', margin: '10px 0 0' }}>
-          Thanks for voting!
-        </p>
-      )}
+      <p role="status" style={{ color: '#fff', fontSize: '12px', textAlign: 'center', margin: voted || submitting || voteError ? '10px 0 0' : 0 }}>
+        {voteError || (submitting ? 'Submitting vote…' : voted ? `You chose: ${voted === 'A' ? optionA : optionB}` : '')}
+      </p>
     </div>
   );
 };

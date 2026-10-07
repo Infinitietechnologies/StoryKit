@@ -1,8 +1,50 @@
 @tailwind utilities;
 
+[data-storykit-root] button {
+  font-family: inherit;
+}
+
+[data-storykit-root] button:focus-visible,
+[data-storykit-root] input:focus-visible,
+[data-storykit-root] a:focus-visible {
+  outline: 2px solid white;
+  outline-offset: 3px;
+}
+
+[data-storykit-root] input:focus-visible {
+  outline-color: #2563eb;
+  outline-offset: 0;
+}
+
+[data-storykit-root] [data-storykit-reply]::placeholder {
+  color: rgba(255, 255, 255, 0.85);
+  opacity: 1;
+}
+
+@keyframes storykit-in-next {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes storykit-in-prev {
+  from { transform: translateX(-24px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+@keyframes storykit-out-next {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(-24px); opacity: 0; }
+}
+@keyframes storykit-out-prev {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(24px); opacity: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   [data-storykit-animated="true"] {
     animation: none !important;
     transition: none !important;
+  }
+  [data-storykit-root] * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
   }
 }

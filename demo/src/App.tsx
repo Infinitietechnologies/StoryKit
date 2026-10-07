@@ -210,10 +210,14 @@ export default function App() {
   const [activeStartIndex, setActiveStartIndex] = useState<number>(0);
 
   const {
+    ready,
+    error: persistenceError,
     viewedIds: viewedStoryIds,
     markViewed,
     isLiked,
     setLiked,
+    getVote,
+    setVote,
     clear: clearPersistence,
   } = useStoryPersistence({ adapter: persistenceAdapter, key: 'viewer-state' });
 
@@ -225,6 +229,7 @@ export default function App() {
 
   /** Open viewer for a user */
   const handleOpen = (i: number) => {
+    if (!ready) return;
     const start = getFirstUnviewedIndex(USERS[i]);
     setActiveStartIndex(start);
     setOpenIndex(i);
@@ -271,6 +276,17 @@ export default function App() {
   };
 
   const active = openIndex !== null ? USERS[openIndex] : null;
+  const activeStories = active?.stories.map((story) => ({
+    ...story,
+    overlays: story.overlays?.map((overlay) => overlay.type === 'poll' ? {
+      ...overlay,
+      data: {
+        ...overlay.data,
+        selectedOption: getVote(`${story.id}:${overlay.id}`),
+        onVote: (option: 'A' | 'B') => setVote(`${story.id}:${overlay.id}`, option),
+      },
+    } : overlay),
+  }));
 
   return (
     <div className="min-h-full flex flex-col items-center justify-start pt-10 px-6 gap-9">
@@ -283,6 +299,8 @@ export default function App() {
       </div>
 
       {/* Story rings row */}
+      {!ready && <p role="status" className="text-white/80 text-sm">Loading your story progress…</p>}
+      {persistenceError && <p role="status" className="text-amber-300 text-sm">Your progress could not be saved. You can keep watching.</p>}
       <div className="flex items-start gap-7">
         {USERS.map((entry, i) => {
           const segments = entry.stories.map((s) => viewedStoryIds.has(s.id));
@@ -330,11 +348,11 @@ export default function App() {
       </div>
 
       {/* Full-screen Story Viewer */}
-      {active && (
+      {active && activeStories && (
         <StoryViewer
           isOpen={openIndex !== null}
           onClose={handleClose}
-          stories={active.stories}
+          stories={activeStories}
           user={active.user}
           initialStoryIndex={activeStartIndex}
           config={{
@@ -342,9 +360,6 @@ export default function App() {
             onStoryViewed: (_idx, story) => {
               // Only marks as viewed AFTER media has successfully loaded and is actively displayed!
               markViewed(story.id);
-            },
-            onStoryEnd: (_idx, story) => {
-              if (story) markViewed(story.id);
             },
             onAllStoriesEnd: handleAllEnd,
             onStartReached: handleStartReached,

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="1280" viewBox="0 0 720 1280">
+  <defs><linearGradient id="sky" x2="0" y2="1"><stop stop-color="#031c33"/><stop offset="0.55" stop-color="#0d566e"/><stop offset="1" stop-color="#299b9d"/></linearGradient><linearGradient id="aurora" x2="1" y2="0"><stop stop-color="#7cffd4" stop-opacity="0"/><stop offset="0.55" stop-color="#7cffd4" stop-opacity="0.75"/><stop offset="1" stop-color="#9b7fff" stop-opacity="0.1"/></linearGradient></defs>
+  <path fill="url(#sky)" d="M0 0h720v1280H0z"/><path fill="url(#aurora)" d="M-60 290Q350 110 790 420L790 700Q400 280-60 580z"/>
+  <g fill="#e3fff8"><circle cx="110" cy="160" r="2"/><circle cx="610" cy="200" r="3"/><circle cx="220" cy="95" r="2"/><circle cx="490" cy="320" r="2"/><circle cx="80" cy="600" r="2"/><circle cx="580" cy="580" r="2"/></g>
+  <path fill="#163e50" d="M0 930l170-360 190 360 140-250 220 390v210H0z"/><path fill="#93e3d9" d="M170 570l-50 106 47-20 49 36zM500 680l-42 75 38-18 54 32z"/><path fill="#082838" d="M0 1100l210-220 210 300 170-270 130 220v150H0z"/>
+  <text x="48" y="1080" fill="#e8fff8" font-family="Arial,sans-serif" font-size="26" letter-spacing="5">AFTER DARK</text><text x="48" y="1140" fill="#fff" font-family="Arial,sans-serif" font-size="54" font-weight="700">Chase the light.</text>
+</svg>

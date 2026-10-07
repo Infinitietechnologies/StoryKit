@@ -13,28 +13,30 @@ const INTERACTIVE_SELECTOR =
   'button, a, input, select, textarea, [role="button"], [data-overlay], [data-interactive]';
 
 export const StoryContainer: React.FC<StoryContainerProps> = ({ children }) => {
-  const { next, prev, pause, resume, isPaused, toggleMute, config } = useStory();
+  const { next, prev, pause, resume, isPaused, toggleMute, config, playbackKey } = useStory();
 
   const containerRef   = useRef<HTMLDivElement>(null);
   const touchStartRef  = useRef<{ x: number; y: number; time: number } | null>(null);
   const isDraggingDown = useRef(false);
   /** Tracks whether WE called pause() so we only resume() what we paused. */
   const didPauseRef    = useRef(false);
+  const snapTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const isRTL =
-    config.dir === 'rtl' ||
+    config.dir ? config.dir === 'rtl' :
     (typeof document !== 'undefined' &&
       (document.dir === 'rtl' || document.documentElement.dir === 'rtl'));
 
   // ── Pointer down ─────────────────────────────────────────────────────────
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
+      if (e.button > 0 || e.isPrimary === false || touchStartRef.current) return;
       // Let interactive children handle their own events
       if ((e.target as HTMLElement).closest(INTERACTIVE_SELECTOR)) return;
 
       touchStartRef.current = { x: e.clientX, y: e.clientY, time: Date.now() };
       isDraggingDown.current = false;
-      e.currentTarget.setPointerCapture?.(e.pointerId);
-      pause();
+      try { e.currentTarget.setPointerCapture?.(e.pointerId); } catch { /* Synthetic or released pointer. */ }
+      pause('gesture');
       didPauseRef.current = true;
     },
     [pause],
@@ -57,13 +59,16 @@ export const StoryContainer: React.FC<StoryContainerProps> = ({ children }) => {
 
         if (deltaY > 140 && config.onClose) {
           touchStartRef.current = null;
+          isDraggingDown.current = false;
+          if (didPauseRef.current) resume('gesture');
+          didPauseRef.current = false;
           snapBack(true);
           config.onClose();
         }
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [config],
+    [config, resume],
   );
 
   // ── Snap container back or animate away ──────────────────────────────────
@@ -73,7 +78,8 @@ export const StoryContainer: React.FC<StoryContainerProps> = ({ children }) => {
     el.style.transition = 'transform 0.35s cubic-bezier(0.32,0,0.67,0), border-radius 0.35s ease';
     el.style.transform   = away ? 'translateY(120%) scale(0.9)' : '';
     el.style.borderRadius = '';
-    setTimeout(() => { if (el) el.style.transition = ''; }, 380);
+    if (snapTimerRef.current) clearTimeout(snapTimerRef.current);
+    snapTimerRef.current = setTimeout(() => { el.style.transition = ''; }, 380);
   }, []);
 
   // ── Pointer up ────────────────────────────────────────────────────────────
@@ -88,7 +94,7 @@ export const StoryContainer: React.FC<StoryContainerProps> = ({ children }) => {
       if (isDraggingDown.current) {
         snapBack(false);
         isDraggingDown.current = false;
-        if (didPauseRef.current) resume();
+        if (didPauseRef.current) resume('gesture');
         didPauseRef.current = false;
         return;
       }
@@ -109,7 +115,7 @@ export const StoryContainer: React.FC<StoryContainerProps> = ({ children }) => {
         else next();
       }
 
-      if (didPauseRef.current) resume();
+      if (didPauseRef.current) resume('gesture');
       didPauseRef.current = false;
     },
     [isRTL, next, prev, resume, snapBack],
@@ -119,34 +125,52 @@ export const StoryContainer: React.FC<StoryContainerProps> = ({ children }) => {
     touchStartRef.current = null;
     isDraggingDown.current = false;
     snapBack(false);
-    if (didPauseRef.current) resume();
+    if (didPauseRef.current) resume('gesture');
     didPauseRef.current = false;
   }, [resume, snapBack]);
 
   // Ensure window pointer release always clears pause state
   useEffect(() => {
     const handleGlobalPointerUp = () => {
-      if (didPauseRef.current) {
-        resume();
-        didPauseRef.current = false;
-      }
+      if (touchStartRef.current || didPauseRef.current) handlePointerCancel();
     };
     window.addEventListener('pointerup', handleGlobalPointerUp);
     window.addEventListener('pointercancel', handleGlobalPointerUp);
     return () => {
       window.removeEventListener('pointerup', handleGlobalPointerUp);
       window.removeEventListener('pointercancel', handleGlobalPointerUp);
+      if (snapTimerRef.current) clearTimeout(snapTimerRef.current);
+      resume('gesture');
     };
-  }, [resume]);
+  }, [resume, handlePointerCancel]);
+
+  useEffect(() => {
+    const updateVisibility = () => {
+      if (document.hidden) pause('visibility');
+      else resume('visibility');
+    };
+    updateVisibility();
+    document.addEventListener('visibilitychange', updateVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', updateVisibility);
+      resume('visibility');
+    };
+  }, [pause, resume, playbackKey]);
 
   // ── Keyboard navigation ───────────────────────────────────────────────────
   useEffect(() => {
     if (config.keyboardNavigation === false) return;
 
     const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.ctrlKey || e.altKey || e.metaKey) return;
+      if (e.code === 'Escape' || e.key === 'Escape') {
+        e.preventDefault();
+        config.onClose?.();
+        return;
+      }
       // Don't steal keys while user is typing
-      const tag = (e.target as HTMLElement).tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      const target = e.target instanceof HTMLElement ? e.target : null;
+      if (target?.closest(INTERACTIVE_SELECTOR + ', [contenteditable]:not([contenteditable="false"])')) return;
 
       switch (e.code) {
         case 'Space':
@@ -186,6 +210,7 @@ export const StoryContainer: React.FC<StoryContainerProps> = ({ children }) => {
   return (
     <div
       ref={containerRef}
+      data-storykit-root="true"
       className="relative w-full h-full bg-black overflow-hidden touch-none select-none"
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}

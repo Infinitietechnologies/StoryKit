@@ -140,6 +140,8 @@ export interface StoryItem {
 /** NOTE: progress is NOT in state — written directly to DOM refs for zero-jank animation */
 export interface StoryState {
   activeIndex: number;
+  /** Changes whenever active media should restart, including reset at the same index. */
+  playbackKey: number;
   isPaused: boolean;
   isLoaded: boolean;
   isBuffering: boolean;
@@ -150,8 +152,10 @@ export interface StoryState {
 export interface StoryActions {
   next: () => void;
   prev: () => void;
-  pause: () => void;
-  resume: () => void;
+  /** Add a pause owner; defaults to the manual pause controlled by callers. */
+  pause: (reason?: string) => void;
+  /** Release only this pause owner, preserving other active reasons. */
+  resume: (reason?: string) => void;
   setLoaded: (val: boolean) => void;
   setBuffering: (val: boolean) => void;
   toggleMute: () => void;

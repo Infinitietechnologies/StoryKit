@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { useStory } from '../context/StoryContext';
 import { StoryOverlay } from '../types';
 
@@ -16,7 +16,10 @@ import { CountdownSticker } from '../stickers/CountdownSticker';
 
 // ── Sticker dispatcher — injects context (pause/resume + config callbacks) ───
 const StickerContent: React.FC<{ overlay: StoryOverlay }> = ({ overlay }) => {
-  const { pause, resume, config } = useStory();
+  const { pause, resume, config, playbackKey } = useStory();
+  const pauseReason = `overlay:${playbackKey}:${overlay.id}`;
+  const pauseOverlay = useCallback(() => pause(pauseReason), [pause, pauseReason]);
+  const resumeOverlay = useCallback(() => resume(pauseReason), [resume, pauseReason]);
 
   switch (overlay.type) {
     case 'text':      return <TextSticker      data={overlay.data} />;
@@ -37,8 +40,8 @@ const StickerContent: React.FC<{ overlay: StoryOverlay }> = ({ overlay }) => {
       return <HashtagSticker data={{ ...overlay.data, onTap }} />;
     }
 
-    case 'poll':     return <PollSticker     data={overlay.data} pause={pause} resume={resume} />;
-    case 'question': return <QuestionSticker data={overlay.data} pause={pause} resume={resume} />;
+    case 'poll':     return <PollSticker     data={overlay.data} pause={pauseOverlay} resume={resumeOverlay} />;
+    case 'question': return <QuestionSticker data={overlay.data} pause={pauseOverlay} resume={resumeOverlay} />;
     case 'custom':   return <>{overlay.content}</>;
     default:         return null;
   }
@@ -75,7 +78,7 @@ const OverlayNode: React.FC<{
 
 // ── Public component ──────────────────────────────────────────────────────────
 export const DynamicOverlay: React.FC = () => {
-  const { stories, activeIndex, isLoaded } = useStory();
+  const { stories, activeIndex, isLoaded, playbackKey } = useStory();
   const story = stories[activeIndex];
   if (!isLoaded || !story?.overlays?.length) return null;
 
@@ -83,7 +86,7 @@ export const DynamicOverlay: React.FC = () => {
     // overflow:hidden clips any sticker that goes outside the card bounds
     <div className="z-40 absolute inset-0 pointer-events-none overflow-hidden">
       {story.overlays.map((overlay) => (
-        <OverlayNode key={overlay.id} overlay={overlay} />
+        <OverlayNode key={`${playbackKey}:${overlay.id}`} overlay={overlay} />
       ))}
     </div>
   );

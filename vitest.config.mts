@@ -2,6 +2,9 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    include: ['src/test/**/*.test.{ts,tsx}'],
+    pool: 'threads',
+    maxWorkers: 1,
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     coverage: {

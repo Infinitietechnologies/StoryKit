@@ -37,14 +37,20 @@ const ProgressSegment = memo(({ index, setSegmentRef, isRTL }: SegmentProps) => 
 ProgressSegment.displayName = 'ProgressSegment';
 
 export const StoryProgress: React.FC = () => {
-  const { stories, setSegmentRef, config } = useStory();
+  const { stories, activeIndex, setSegmentRef, config } = useStory();
   const isRTL =
-    config.dir === 'rtl' ||
+    config.dir ? config.dir === 'rtl' :
     (typeof document !== 'undefined' &&
       (document.dir === 'rtl' || document.documentElement.dir === 'rtl'));
 
   return (
     <div
+      role="progressbar"
+      aria-label="Story progression"
+      aria-valuemin={0}
+      aria-valuemax={stories.length}
+      aria-valuenow={stories.length ? activeIndex + 1 : 0}
+      aria-valuetext={stories.length ? `Story ${activeIndex + 1} of ${stories.length}` : 'No stories'}
       dir={isRTL ? 'rtl' : 'ltr'}
       className="absolute top-0 left-0 w-full z-50 flex gap-[3px] px-2 pb-3 bg-gradient-to-b from-black/60 to-transparent pointer-events-none"
       style={{

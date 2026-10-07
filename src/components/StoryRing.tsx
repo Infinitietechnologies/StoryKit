@@ -27,7 +27,7 @@ export const StoryRing: React.FC<StoryRingProps> = ({
 }) => {
   const gradientId = 'story_ring_grad_' + useId().replace(/[^a-zA-Z0-9]/g, '');
   const isRTL =
-    dir === 'rtl' ||
+    dir ? dir === 'rtl' :
     (typeof document !== 'undefined' &&
       (document.dir === 'rtl' || document.documentElement.dir === 'rtl'));
 
@@ -87,9 +87,10 @@ export const StoryRing: React.FC<StoryRingProps> = ({
   return (
     <button
       type="button"
+      data-storykit-root="true"
       onClick={onOpen}
       aria-label={`${viewedCount} of ${totalSegments} stories viewed from ${user.name}`}
-      className="flex flex-col items-center gap-1.5 group focus:outline-none"
+      className="flex flex-col items-center gap-1.5 group bg-transparent border-0 p-0 appearance-none focus:outline-none"
     >
       {/* Ring container with interactive hover scale and pulse */}
       <div

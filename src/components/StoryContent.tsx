@@ -1,287 +1,179 @@
-import React, { useCallback, useEffect, useInsertionEffect, useLayoutEffect, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useStory } from '../context/StoryContext';
 import { StoryItem } from '../types';
 
 const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
-
-// Inject smooth transition keyframes once
-const TRANSITION_STYLES = `
-@keyframes storySlideInRight {
-  0% {
-    transform: translateX(36px) scale(0.985);
-    opacity: 0;
-  }
-  100% {
-    transform: translateX(0) scale(1);
-    opacity: 1;
-  }
-}
-@keyframes storySlideOutLeft {
-  0% {
-    transform: translateX(0) scale(1);
-    opacity: 1;
-  }
-  100% {
-    transform: translateX(-36px) scale(0.985);
-    opacity: 0;
-  }
-}
-@keyframes storySlideInLeft {
-  0% {
-    transform: translateX(-36px) scale(0.985);
-    opacity: 0;
-  }
-  100% {
-    transform: translateX(0) scale(1);
-    opacity: 1;
-  }
-}
-@keyframes storySlideOutRight {
-  0% {
-    transform: translateX(0) scale(1);
-    opacity: 1;
-  }
-  100% {
-    transform: translateX(36px) scale(0.985);
-    opacity: 0;
-  }
-}
-@keyframes storyFadeIn {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-`;
-
-let keyframeInjected = false;
-function ensureKeyframe() {
-  if (keyframeInjected || typeof document === 'undefined') return;
-  const style = document.createElement('style');
-  style.textContent = TRANSITION_STYLES;
-  document.head.appendChild(style);
-  keyframeInjected = true;
-}
+interface MediaLayer { story: StoryItem; key: string; index: number }
 
 export const StoryContent: React.FC = () => {
-  useInsertionEffect(ensureKeyframe, []);
-
   const {
-    stories,
-    activeIndex,
-    isPaused,
-    isMuted,
-    isLoaded,
-    isBuffering,
-    error,
-    setLoaded,
-    setBuffering,
-    setError,
-    seekVideoProgress,
-    next,
-    pause,
-    toggleMute,
+    stories, activeIndex, playbackKey, isPaused, isMuted, isLoaded, isBuffering,
+    error, setLoaded, setBuffering, setError, seekVideoProgress, next, reset,
+    pause, resume, toggleMute,
   } = useStory();
-
   const activeStory = stories[activeIndex];
-  const [outgoingStory, setOutgoingStory] = useState<StoryItem | null>(null);
+  const hasStory = Boolean(activeStory);
+  const mediaKey = `${playbackKey}:${activeStory?.id}:${activeStory?.type}:${activeStory?.url}`;
+  const previousLayerRef = useRef<MediaLayer | null>(null);
+  const [outgoingLayer, setOutgoingLayer] = useState<MediaLayer | null>(null);
   const [direction, setDirection] = useState<'next' | 'prev'>('next');
-  const prevStoryIdRef = useRef<string | null>(null);
-  const prevIndexRef = useRef<number>(activeIndex);
+  const [slowLoading, setSlowLoading] = useState(false);
+  const [playbackBlocked, setPlaybackBlocked] = useState(false);
+  const imageRef = useRef<HTMLImageElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const errorTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  const errorHandledRef = useRef(false);
-  const pendingOutgoingStory =
-    prevStoryIdRef.current && prevStoryIdRef.current !== activeStory?.id
-      ? stories.find((story) => story.id === prevStoryIdRef.current) ?? null
-      : null;
-  // This render-time derivation includes the old keyed layer in the very first
-  // commit of a navigation, before the layout effect records transition state.
-  const visibleOutgoingStory = pendingOutgoingStory ?? outgoingStory;
+  const previousLayer = previousLayerRef.current;
+  const pendingOutgoing = previousLayer && previousLayer.key !== mediaKey &&
+    previousLayer.story.id !== activeStory?.id ? previousLayer : null;
+  const visibleOutgoing = pendingOutgoing ?? outgoingLayer;
 
-  // Handle seamless dual-buffer transition when active story changes
   useIsomorphicLayoutEffect(() => {
-    if (!activeStory) return;
-
-    if (prevStoryIdRef.current && prevStoryIdRef.current !== activeStory.id) {
-      const oldIndex = prevIndexRef.current;
-      const isForward = activeIndex >= oldIndex;
-      setDirection(isForward ? 'next' : 'prev');
-
-      // Preserve outgoing story for transition
-      const prevStory = stories.find((s) => s.id === prevStoryIdRef.current) || {
-        id: prevStoryIdRef.current,
-        url: '',
-        type: 'image' as const,
-      };
-
-      setOutgoingStory(prevStory);
-      prevStoryIdRef.current = activeStory.id;
-      prevIndexRef.current = activeIndex;
-
+    if (!activeStory) {
+      previousLayerRef.current = null;
+      setOutgoingLayer(null);
       return;
     }
+    const previous = previousLayerRef.current;
+    if (previous && previous.key !== mediaKey) {
+      setDirection(activeIndex >= previous.index ? 'next' : 'prev');
+      setOutgoingLayer(previous.story.id === activeStory.id ? null : previous);
+    }
+    previousLayerRef.current = { story: activeStory, key: mediaKey, index: activeIndex };
+  }, [activeStory, activeIndex, mediaKey]);
 
-    prevStoryIdRef.current = activeStory.id;
-    prevIndexRef.current = activeIndex;
-  }, [activeStory, activeIndex, stories]);
-
-  // Keep the previous media visible until the incoming media is ready, then
-  // remove it only after both transition animations have completed.
   useEffect(() => {
-    if (!outgoingStory || !isLoaded) return;
-    const timer = setTimeout(() => setOutgoingStory(null), 270);
+    if (!outgoingLayer || (!isLoaded && !error)) return;
+    const timer = setTimeout(() => setOutgoingLayer(null), 270);
     return () => clearTimeout(timer);
-  }, [isLoaded, outgoingStory]);
+  }, [isLoaded, error, outgoingLayer]);
+
+  useEffect(() => {
+    setSlowLoading(false);
+    setPlaybackBlocked(false);
+    resume('autoplay');
+    return () => resume('autoplay');
+  }, [mediaKey, resume]);
+
+  useEffect(() => {
+    if (!hasStory || (isLoaded && !isBuffering) || error) return;
+    const timer = setTimeout(() => setSlowLoading(true), 8000);
+    return () => clearTimeout(timer);
+  }, [mediaKey, hasStory, isLoaded, isBuffering, error]);
+
+  // Inspect the displayed image's decoded cache state without a second request.
+  useEffect(() => {
+    const image = imageRef.current;
+    if (activeStory?.type === 'image' && image?.complete && image.naturalWidth > 0) setLoaded(true);
+  }, [mediaKey, activeStory?.type, setLoaded]);
 
   const handleError = useCallback(() => {
-    if (errorHandledRef.current) return;
-    errorHandledRef.current = true;
-    setError('Media failed to load');
+    setLoaded(false);
     setBuffering(false);
-    errorTimerRef.current = setTimeout(next, 3000);
-  }, [next, setBuffering, setError]);
+    setError('This story could not be loaded.');
+    setPlaybackBlocked(false);
+  }, [setLoaded, setBuffering, setError]);
 
-  // Robust image loading detection: handles cached images, fast renders, and slow networks
-  useEffect(() => {
-    if (activeStory?.type !== 'image') return;
-
-    let cancelled = false;
-    const img = new Image();
-    img.src = activeStory.url;
-
-    // If image is already cached by the browser, mark loaded immediately
-    if (img.complete && img.naturalWidth > 0) {
-      setLoaded(true);
-      return;
+  const attemptPlayback = useCallback(async (video: HTMLVideoElement, cancelled: () => boolean) => {
+    try {
+      await video.play();
+      if (!cancelled()) setPlaybackBlocked(false);
+      return !cancelled();
+    } catch (playError) {
+      if (cancelled() || (playError instanceof Error && playError.name === 'AbortError')) return false;
+      if (!video.muted) { video.muted = true; toggleMute(); return false; }
+      setPlaybackBlocked(true);
+      pause('autoplay');
+      return false;
     }
+  }, [pause, toggleMute]);
 
-    img.onload = () => {
-      if (!cancelled) setLoaded(true);
-    };
-    img.onerror = () => {
-      if (!cancelled) handleError();
-    };
-
-    return () => {
-      cancelled = true;
-      img.onload = null;
-      img.onerror = null;
-    };
-  }, [activeStory?.id, activeStory?.url, activeStory?.type, handleError, setLoaded]);
-
-  // Sync video play/pause with context isPaused
   useEffect(() => {
     const video = videoRef.current;
     if (!video || activeStory?.type !== 'video') return;
-    if (isPaused) {
-      video.pause();
-    } else {
-      video.play().catch(() => {
-        if (!video.muted) {
-          toggleMute();
-          return;
-        }
-        pause();
-        setError('Playback was blocked by the browser');
-      });
-    }
-  }, [isPaused, isMuted, activeStory, pause, setError, toggleMute]);
+    let cancelled = false;
+    video.muted = isMuted;
+    if (isPaused || error) video.pause();
+    else void attemptPlayback(video, () => cancelled);
+    return () => { cancelled = true; video.pause(); };
+  }, [mediaKey, activeStory?.type, isPaused, isMuted, error, attemptPlayback]);
 
-  // Sync muted state reactively
-  useEffect(() => {
-    if (videoRef.current) videoRef.current.muted = isMuted;
-  }, [isMuted]);
-
-  // Clear error timer on story change
-  useEffect(() => {
-    errorHandledRef.current = false;
-    if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
-    return () => {
-      if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
-    };
-  }, [activeIndex]);
+  const playFromGesture = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    // Invoke play synchronously inside the click gesture, before React effects.
+    void attemptPlayback(video, () => video !== videoRef.current).then((played) => {
+      if (played && video === videoRef.current) { resume('autoplay'); resume(); }
+    });
+  };
 
   if (!activeStory) return null;
-
-  const inAnimation = visibleOutgoingStory
-    ? direction === 'next'
-      ? 'storySlideInRight 0.26s cubic-bezier(0.22, 1, 0.36, 1) forwards'
-      : 'storySlideInLeft 0.26s cubic-bezier(0.22, 1, 0.36, 1) forwards'
-    : 'none';
-
-  const outAnimation =
-    direction === 'next'
-      ? 'storySlideOutLeft 0.26s cubic-bezier(0.22, 1, 0.36, 1) forwards'
-      : 'storySlideOutRight 0.26s cubic-bezier(0.22, 1, 0.36, 1) forwards';
+  const layers: (MediaLayer & { active: boolean })[] = [
+    ...(visibleOutgoing ? [{ ...visibleOutgoing, active: false }] : []),
+    { story: activeStory, key: mediaKey, index: activeIndex, active: true },
+  ];
+  const loading = (!isLoaded || isBuffering) && !error && !playbackBlocked;
+  const controlClass = 'min-h-[44px] min-w-[44px] rounded-full border-0 appearance-none px-5 py-2.5 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white';
 
   return (
     <div className="absolute inset-0 flex items-center justify-center bg-black overflow-hidden select-none">
-      {/* A keyed layer list lets React preserve the decoded media node when an
-          active story becomes outgoing, eliminating the one-frame black flash. */}
-      {[
-        ...(visibleOutgoingStory ? [{ story: visibleOutgoingStory, active: false }] : []),
-        { story: activeStory, active: true },
-      ].map(({ story, active }) => (
-        <div
-          data-storykit-animated="true"
-          key={story.id}
+      {layers.map(({ story, key, active }) => (
+        <div key={key} aria-hidden={!active || undefined} data-storykit-animated="true"
           className={`absolute inset-0 ${active ? 'z-20' : 'z-10 pointer-events-none'}`}
           style={{
-            animation: isLoaded ? (active ? inAnimation : outAnimation) : 'none',
+            animation: isLoaded && visibleOutgoing
+              ? `${active ? (direction === 'next' ? 'storykit-in-next' : 'storykit-in-prev') : (direction === 'next' ? 'storykit-out-next' : 'storykit-out-prev')} 260ms ease-out both`
+              : undefined,
             opacity: isLoaded ? undefined : active ? 0 : 1,
-            willChange: 'transform, opacity',
           }}
         >
           {story.type === 'image' ? (
-            <img
-              ref={active ? (el) => {
-                if (el && el.complete && el.naturalWidth > 0) setLoaded(true);
-              } : undefined}
-              src={story.url}
-              alt={active ? story.altText ?? '' : ''}
-              className="w-full h-full object-cover"
-              draggable={false}
-              onLoad={active ? () => setLoaded(true) : undefined}
-              onError={active ? handleError : undefined}
-            />
+            <img ref={active ? imageRef : undefined} src={story.url} alt={active ? story.altText ?? '' : ''}
+              className="w-full h-full object-cover" draggable={false}
+              onLoad={active ? () => { setError(null); setLoaded(true); } : undefined}
+              onError={active ? handleError : undefined} />
           ) : (
-            <video
-              ref={active ? videoRef : undefined}
-              src={story.url}
-              className="w-full h-full object-cover"
-              playsInline
-              autoPlay={active}
-              muted={active ? isMuted : true}
+            <video ref={active ? videoRef : undefined} src={story.url}
+              aria-label={active ? story.altText ?? 'Story video' : undefined}
+              className="w-full h-full object-cover" playsInline preload="auto" muted={active ? isMuted : true}
               onWaiting={active ? () => setBuffering(true) : undefined}
               onCanPlay={active ? () => { setBuffering(false); setLoaded(true); } : undefined}
-              onPlaying={active ? () => { setBuffering(false); setLoaded(true); } : undefined}
+              onPlaying={active ? () => { setBuffering(false); setLoaded(true); setPlaybackBlocked(false); } : undefined}
               onError={active ? handleError : undefined}
-              onTimeUpdate={active ? (e) => {
-                const video = e.currentTarget;
-                if (video.duration > 0) {
+              onTimeUpdate={active ? (event) => {
+                const video = event.currentTarget;
+                if (Number.isFinite(video.duration) && video.duration > 0)
                   seekVideoProgress(activeIndex, (video.currentTime / video.duration) * 100);
-                }
               } : undefined}
-              onEnded={active ? () => {
-                seekVideoProgress(activeIndex, 100);
-                next();
-              } : undefined}
-            />
+              onEnded={active ? () => { seekVideoProgress(activeIndex, 100); next(); } : undefined} />
           )}
         </div>
       ))}
 
-      {/* Spinner — loading / buffering */}
-      {(!isLoaded || isBuffering) && !error && (
-        <div className="absolute z-30 pointer-events-none">
-          <div className="w-9 h-9 rounded-full border-[3px] border-white/20 border-t-white animate-spin" />
+      {loading && (
+        <div className="absolute z-30 flex flex-col items-center gap-3 rounded-2xl bg-black/75 px-6 py-5 text-center" role="status">
+          <div aria-hidden="true" data-storykit-animated="true" className="w-8 h-8 rounded-full border-[3px] border-white/30 border-t-white animate-spin" />
+          <p className="text-sm text-white/90">{slowLoading ? 'Taking longer than usual…' : isBuffering ? 'Buffering video…' : 'Loading story…'}</p>
+          {slowLoading && <div className="flex gap-3">
+            <button type="button" className={`${controlClass} bg-white text-black`} onClick={() => reset(activeIndex)}>Try again</button>
+            <button type="button" className={`${controlClass} bg-white/15 text-white`} onClick={next}>Skip story</button>
+          </div>}
         </div>
       )}
 
-      {/* Error state */}
       {error && (
-        <div className="absolute z-30 flex flex-col items-center gap-2 px-6 text-center pointer-events-none">
-          <div className="text-white/80 text-sm font-medium">{error}</div>
-          <div className="text-white/40 text-xs">Skipping in 3s…</div>
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-black/85 px-6 text-center">
+          <div role="alert"><p className="text-white text-base font-semibold">Story unavailable</p>
+            <p className="mt-2 text-white/80 text-sm">{error}</p></div>
+          <div className="flex gap-3">
+            <button type="button" className={`${controlClass} bg-white text-black`} onClick={() => reset(activeIndex)}>Try again</button>
+            <button type="button" className={`${controlClass} bg-white/15 text-white`} onClick={next}>Skip story</button>
+          </div>
+        </div>
+      )}
+
+      {playbackBlocked && !error && (
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-black/50 px-6 text-center">
+          <p role="status" className="text-white text-sm">Tap to play this video</p>
+          <button type="button" className={`${controlClass} bg-white text-black`} onClick={playFromGesture}>Play video</button>
         </div>
       )}
     </div>

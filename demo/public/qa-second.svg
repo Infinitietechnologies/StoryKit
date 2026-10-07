@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="1280" viewBox="0 0 720 1280">
+  <defs><linearGradient id="ocean" x2="0" y2="1"><stop stop-color="#123953"/><stop offset="0.6" stop-color="#0b8194"/><stop offset="1" stop-color="#042d49"/></linearGradient></defs><path fill="url(#ocean)" d="M0 0h720v1280H0z"/>
+  <circle cx="530" cy="270" r="125" fill="#f8ddb8"/><path d="M0 620q140-100 280 0t280 0 280 0v160H0z" fill="#42c3bf" opacity="0.75"/><path d="M0 810q140-100 280 0t280 0 280 0v190H0z" fill="#0796a7"/><path d="M0 1000q140-100 280 0t280 0 280 0v280H0z" fill="#053f61"/>
+  <text x="48" y="1080" fill="#b9ffed" font-family="Arial,sans-serif" font-size="26" letter-spacing="5">GO SLOW</text><text x="48" y="1140" fill="#fff" font-family="Arial,sans-serif" font-size="54" font-weight="700">Meet the ocean.</text>
+</svg>
