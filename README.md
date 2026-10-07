@@ -100,6 +100,66 @@ import {
 
 Set `keyboardNavigation: false` to disable these global controls.
 
+## Persistence and external stores
+
+StoryKit does not depend on a particular state manager. Persistence uses the
+`StoryPersistenceAdapter` contract, so applications can store the same state in
+Web Storage, Redux, Zustand, IndexedDB, React Native AsyncStorage, a server API,
+or another platform-specific store.
+
+For browser persistence:
+
+```tsx
+import {
+  createWebStorageAdapter,
+  useStoryPersistence,
+} from 'react-storykit';
+
+const adapter = createWebStorageAdapter({ prefix: 'my-app:' });
+
+function Stories() {
+  const storiesState = useStoryPersistence({
+    adapter,
+    key: `stories:${accountId}`,
+  });
+
+  return (
+    <StoryViewer
+      isOpen={open}
+      onClose={close}
+      stories={stories}
+      initialStoryIndex={stories.findIndex(
+        (story) => !storiesState.hasViewed(story.id),
+      )}
+      config={{
+        onStoryViewed: (_index, story) => storiesState.markViewed(story.id),
+        isStoryLiked: storiesState.isLiked,
+        onLikeChange: storiesState.setLiked,
+      }}
+    />
+  );
+}
+```
+
+Custom adapters implement four small operations:
+
+```ts
+const reduxAdapter: StoryPersistenceAdapter = {
+  get: (key) => selectStoryState(store.getState(), key),
+  set: (key, value) => { store.dispatch(saveStoryState({ key, value })); },
+  remove: (key) => { store.dispatch(clearStoryState(key)); },
+  subscribe: (_key, listener) => store.subscribe(listener),
+};
+```
+
+Create adapters once outside React components. Scope keys by account, tenant, or
+feed so different users never share progress. The snapshot is versioned and
+currently stores viewed IDs, liked IDs, and poll votes.
+
+Pinia is Vue-specific, so a React component cannot call a Pinia hook directly.
+A shared store module or framework bridge can still expose Pinia-backed data
+through the same adapter contract.
+
 ## Security notes
 
 Story media URLs are rendered by the browser and should come from trusted or

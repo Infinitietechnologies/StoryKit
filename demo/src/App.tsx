@@ -1,10 +1,14 @@
 import { useState } from 'react';
 import {
+  createWebStorageAdapter,
   StoryRing,
   StoryViewer,
   StoryItem,
   StoryUser,
+  useStoryPersistence,
 } from 'react-storykit';
+
+const persistenceAdapter = createWebStorageAdapter({ prefix: 'storykit-demo:' });
 
 // ── Helper: date N seconds from now ──────────────────────────────────────────
 const fromNow = (seconds: number) =>
@@ -205,8 +209,13 @@ export default function App() {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
   const [activeStartIndex, setActiveStartIndex] = useState<number>(0);
 
-  // Granular set of individual story IDs that have been viewed
-  const [viewedStoryIds, setViewedStoryIds] = useState<Set<string>>(new Set());
+  const {
+    viewedIds: viewedStoryIds,
+    markViewed,
+    isLiked,
+    setLiked,
+    clear: clearPersistence,
+  } = useStoryPersistence({ adapter: persistenceAdapter, key: 'viewer-state' });
 
   /** Calculate first unviewed story index for a given user (starts at 0 if all viewed) */
   const getFirstUnviewedIndex = (userEntry: typeof USERS[number]) => {
@@ -258,7 +267,7 @@ export default function App() {
 
   /** Reset all viewed statuses for testing */
   const handleResetAll = () => {
-    setViewedStoryIds(new Set());
+    void clearPersistence();
   };
 
   const active = openIndex !== null ? USERS[openIndex] : null;
@@ -332,27 +341,16 @@ export default function App() {
             initialStoryIndex: activeStartIndex,
             onStoryViewed: (_idx, story) => {
               // Only marks as viewed AFTER media has successfully loaded and is actively displayed!
-              setViewedStoryIds((prev) => {
-                if (prev.has(story.id)) return prev;
-                const next = new Set(prev);
-                next.add(story.id);
-                return next;
-              });
+              markViewed(story.id);
             },
             onStoryEnd: (_idx, story) => {
-              if (story) {
-                setViewedStoryIds((prev) => {
-                  if (prev.has(story.id)) return prev;
-                  const next = new Set(prev);
-                  next.add(story.id);
-                  return next;
-                });
-              }
+              if (story) markViewed(story.id);
             },
             onAllStoriesEnd: handleAllEnd,
             onStartReached: handleStartReached,
             onReply: (msg, id) => console.log('Reply:', msg, 'story:', id),
-            onLike: (id) => console.log('Liked story:', id),
+            isStoryLiked: isLiked,
+            onLikeChange: setLiked,
             onShare: (id) => console.log('Share story:', id),
             onMention: (u) => console.log('Mention tapped:', u),
             onHashtag: (t) => console.log('Hashtag tapped:', t),

@@ -32,6 +32,7 @@ export const StoryFooter: React.FC<StoryFooterProps> = ({ storyId, userName }) =
   const [liked,   setLiked]   = useState(false);
   const [popping, setPopping] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const persistedLiked = config.isStoryLiked?.(storyId);
 
   // Reset per-story state when story changes
   useEffect(() => {
@@ -39,6 +40,10 @@ export const StoryFooter: React.FC<StoryFooterProps> = ({ storyId, userName }) =
     setMessage('');
     setPopping(false);
   }, [storyId]);
+
+  useEffect(() => {
+    if (persistedLiked !== undefined) setLiked(persistedLiked);
+  }, [persistedLiked, storyId]);
 
   const handleFocus = () => pause();
   const handleBlur  = () => resume();
@@ -54,6 +59,7 @@ export const StoryFooter: React.FC<StoryFooterProps> = ({ storyId, userName }) =
   const handleLike = () => {
     const next = !liked;
     setLiked(next);
+    config.onLikeChange?.(storyId, next);
     if (next) {
       setPopping(true);
       config.onLike?.(storyId);

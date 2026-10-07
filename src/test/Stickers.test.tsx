@@ -1,6 +1,6 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CountdownSticker } from '../stickers/CountdownSticker';
 import { EmojiSticker } from '../stickers/EmojiSticker';
 import { HashtagSticker } from '../stickers/HashtagSticker';
@@ -10,6 +10,8 @@ import { MusicSticker } from '../stickers/MusicSticker';
 import { PollSticker } from '../stickers/PollSticker';
 import { QuestionSticker } from '../stickers/QuestionSticker';
 import { TextSticker } from '../stickers/TextSticker';
+
+afterEach(cleanup);
 
 describe('stickers', () => {
   it('renders the passive sticker variants', () => {
@@ -62,6 +64,16 @@ describe('stickers', () => {
     expect(pause).toHaveBeenCalled();
     expect(resume).toHaveBeenCalled();
     expect(onVote).toHaveBeenCalledTimes(1);
+  });
+
+  it('restores a persisted poll selection', () => {
+    render(
+      <PollSticker
+        data={{ question: 'Choose', optionA: 'A', optionB: 'B', selectedOption: 'B' }}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Vote for: B' })).toBeDisabled();
+    expect(screen.getByText(/B\s+52%/)).toBeInTheDocument();
   });
 
   it('pauses while answering and submits a trimmed response', () => {

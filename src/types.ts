@@ -61,6 +61,8 @@ export interface PollStickerData {
   question: string;
   optionA: string;
   optionB: string;
+  /** Previously selected option supplied by a persistence or external store. */
+  selectedOption?: 'A' | 'B' | null;
   /** Called when the viewer votes */
   onVote?: (option: 'A' | 'B') => void;
 }
@@ -219,6 +221,10 @@ export interface ViewerConfig {
   onReply?: (message: string, storyId: string) => void;
   /** Called when viewer taps the like/heart button */
   onLike?: (storyId: string) => void;
+  /** Controlled liked-state lookup for persistent or external stores. */
+  isStoryLiked?: (storyId: string) => boolean;
+  /** Called for both like and unlike transitions. */
+  onLikeChange?: (storyId: string, liked: boolean) => void;
   /** Called when viewer taps the share button */
   onShare?: (storyId: string) => void;
   /** Called when viewer taps a @mention sticker */

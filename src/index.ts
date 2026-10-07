@@ -1,4 +1,5 @@
 export * from './types';
+export * from './persistence';
 export * from './context/StoryContext';
 export * from './components/StoryContainer';
 export * from './components/StoryProgress';

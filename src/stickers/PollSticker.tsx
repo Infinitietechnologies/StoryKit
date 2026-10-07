@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { PollStickerData } from '../types';
 
 interface PollStickerProps {
@@ -9,8 +9,12 @@ interface PollStickerProps {
 }
 
 export const PollSticker: React.FC<PollStickerProps> = ({ data, pause, resume }) => {
-  const { question, optionA, optionB, onVote } = data;
-  const [voted, setVoted] = useState<'A' | 'B' | null>(null);
+  const { question, optionA, optionB, selectedOption, onVote } = data;
+  const [voted, setVoted] = useState<'A' | 'B' | null>(selectedOption ?? null);
+
+  useEffect(() => {
+    setVoted(selectedOption ?? null);
+  }, [selectedOption]);
 
   // Simulated base vote distribution (real apps pass these via data.initialVotes)
   const base = { A: 48, B: 52 };
