@@ -3,6 +3,8 @@
 Production-focused React components for image and video stories, segmented story
 rings, progress indicators, gestures, and interactive stickers.
 
+[Live demo](https://infinitietechnologies.github.io/StoryKit/)
+
 ## Requirements
 
 - React 18 or 19

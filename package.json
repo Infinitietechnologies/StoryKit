@@ -1,6 +1,6 @@
 {
   "name": "react-storykit",
-  "version": "1.0.0",
+  "version": "0.9.0",
   "description": "Modern headless & styled stories status component kit for React. Segmented status rings, interactive Instagram stickers, smooth dual-buffer transitions, and gestures.",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
