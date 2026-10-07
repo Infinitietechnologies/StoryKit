@@ -36,6 +36,8 @@ jobs:
         working-directory: demo
         env:
           PAGES_BASE_PATH: /StoryKit/
+      - run: npx playwright install --with-deps chromium
+      - run: node demo/scripts/check-production.mjs
       - uses: actions/upload-pages-artifact@v4
         with:
           path: demo/dist
