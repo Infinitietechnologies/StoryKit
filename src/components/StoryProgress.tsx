@@ -52,7 +52,7 @@ export const StoryProgress: React.FC = () => {
       aria-valuenow={stories.length ? activeIndex + 1 : 0}
       aria-valuetext={stories.length ? `Story ${activeIndex + 1} of ${stories.length}` : 'No stories'}
       dir={isRTL ? 'rtl' : 'ltr'}
-      className="absolute top-0 left-0 w-full z-50 flex gap-[3px] px-2 pb-3 bg-gradient-to-b from-black/60 to-transparent pointer-events-none"
+      className="absolute top-0 left-0 w-full z-50 flex gap-[3px] px-3 pointer-events-none"
       style={{
         paddingTop: 'max(8px, env(safe-area-inset-top, 8px))',
       }}

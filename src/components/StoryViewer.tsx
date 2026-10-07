@@ -69,9 +69,10 @@ const StoryHeader: React.FC<{ user?: StoryUser; onClose: () => void }> = ({ user
 
   return (
     <div
-      className="absolute top-5 sm:top-7 left-0 right-0 z-40 px-3 pb-6 flex items-center gap-2 pointer-events-none bg-gradient-to-b from-black/70 to-transparent"
+      className="absolute top-0 left-0 right-0 z-40 px-3 pb-14 flex items-center gap-2 pointer-events-none"
       style={{
-        paddingTop: 'max(4px, env(safe-area-inset-top, 0px))',
+        paddingTop: 'calc(max(8px, env(safe-area-inset-top, 0px)) + 15px)',
+        background: 'linear-gradient(to bottom, rgba(0,0,0,0.68) 0%, rgba(0,0,0,0.38) 55%, transparent 100%)',
       }}
     >
       {/* User info */}
